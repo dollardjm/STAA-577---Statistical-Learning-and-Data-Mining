@@ -1,0 +1,537 @@
+---
+title: "STAA 577 Assignment 5"
+author: "Jon Dollard"
+date: "9/24/2020"
+output: pdf_document
+---
+
+```{r setup, message = FALSE, warning = FALSE}
+options(warnPartialMatchArgs = FALSE)  # don't want these warnings
+library(ISLR)         # The `Carseats` data set
+library(MASS)         # The `Boston` data set
+library(magrittr)     # pipes
+library(tibble)       # tibbles
+library(dplyr)        # data wrangling
+library(purrr)        # iteration
+library(yardstick)    # classification performance measures
+library(rpart)        # building classification trees
+library(rpart.plot)   # new plotting package for rpart
+library(randomForest) # package name says it
+library(gbm)          # Boosting algorithms
+library(ggplot2)      # tidy plotting
+library(gridExtra)    # arranging ggplot `grobs` into grid
+library(caret)        # classification and Regression Training (CV)
+library(tree)         # tree library
+```
+
+Question 1: 
+
+Text: Exercises 8.4, Conceptual Question #3
+
+Consider the Gini index, classification error, and entropy in a simple classification setting with two classes.  Create a single plot that displays each of these quantities as a function of $\hat{p_{m1}}$.  The x-axis should display $\hat{p_{m1}}$, ranging from 0 to 1, and the y-axis should display the value of the Gini index, classification error, and entropy.
+
+```{r}
+#Create a vector of values for variable for p_hatm1
+p_hatm1 <- seq(0,1,0.01)
+
+#Create of vector of values for varaible p_hatm2
+p_hatm2 <- 1 - p_hatm1
+
+#Calculate the classification error using the pmax()
+E <- 1 - pmax(p_hatm1, p_hatm2)
+
+#Calculate the Gini index
+G <- p_hatm1*p_hatm2 + p_hatm2*p_hatm1
+
+#Calculate the entropy
+D <- -((p_hatm1*log(p_hatm1))+(p_hatm2*log(p_hatm2)))
+
+#Create a data frame for plotting with ggplot
+Error_df <- data.frame(p_hatm1 = p_hatm1, E = E, G = G, D = D)
+
+ggplot(data = Error_df, aes(x = p_hatm1)) +
+  labs(title = "Classification Error, Gini Index, and Entropy vs. p_hat_m1",
+       x = "p_hatm1", y = "E,G,D") +
+  geom_line(aes(y = E), col = "blue") +
+  geom_line(aes(y = G), col = "red", linetype = "dashed") +
+  geom_line(aes(y = D), col = "green", linetype = "twodash")
+
+```
+
+\pagebreak
+
+Question 3: 
+
+Text: Exercises 8.4, Conceptual Question #5
+
+Suppose we produce ten bootstrapped samples from a data set containing red and green classes.  We thenk apply a classification tree to each bootstrapped sample and, for a specific value of X, produce 10 estimates of P(Class is Red|X):
+
+0.1, 0.15, 0.2, 0.2, 0.55, 0.6, 0.6, 0.65, 0.7, and 0.75.
+
+There are two common ways to combine these results together into a single class prediction.  One is the majority vote approach discussed in this chapter.  The second approach is to classify based on the average probability.  In this example, what is the final classification under each of these two approaches?
+
+```{r}
+#Create a vector of probabilities and find the mean
+P_Red_given_X <- c(0.1, 0.15, 0.2, 0.2, 0.55, 0.6, 0.6, 0.65, 0.7, 0.75)
+mean(P_Red_given_X)
+```
+
+If P(Class is Red|X) > .5 we can conclude that the value of X is more likely to be in the red class.  Therefore, if we look at the majority decision rule we notice that majority of our bootstrapped estimates (6 of 10) classify X as red and create a single class prediction that X belongs to the red class.
+
+However, when we look at the mean probability we see that is has a value of 0.45.  If this criteria is used to create a single class prediction then X would be classified as green.
+
+\pagebreak
+
+Question 4: 
+
+Text: Exercises 8.4, Applied Question #8
+
+In the lab, a classification tree was applied to the Carseats data set after converting Sales into a qualitative response variable.  Now we will seek to predict Sales using regression trees and related approaches, treating the response as a quantitative variable.
+
+(a) Split the data set into a training set and a test set.
+
+```{r}
+#Clear the r global environment
+rm(list = ls())
+
+#Add an ID column to Carseats so we can split it into a training and test set
+Carseats %<>% tibble::as.tibble()
+Carseats %<>% dplyr::mutate(id  = dplyr::row_number())
+Carseats
+dim(Carseats)
+
+#set a seed for reproducibility
+set.seed(1)
+
+#split the Carseats data into a test and training set
+carseats_train <- Carseats %>% 
+  dplyr::sample_frac(size = 0.5)              
+
+carseats_test <- Carseats %>%
+  dplyr::anti_join(carseats_train, by = "id") %>%  
+  dplyr::select(-id) 
+
+carseats_train %<>% dplyr::select(-id)
+
+#Sanity check dimensions of training and test set
+dim(carseats_test)
+dim(carseats_train)
+```
+
+(b) Fit a regression tree to the training set.  Plot the tree, and interpret the results.  What test MSE do you obtain?
+
+```{r}
+#Borrowing code kindly provided in Lab08
+#Use rpart() to fit the regression tree to the training set
+tree_carseats <- rpart::rpart(Sales ~ ., data = carseats_train)
+tree_carseats
+
+#Plot the tree
+par(xpd = NA)                                                   
+plot(tree_carseats, uniform = TRUE)                             
+text(tree_carseats, use.n = TRUE, cex = 0.8)                    
+title(main = "Regression tree for Car Seat Sales")  
+
+#Use the predict() on the test set to make prediction from the regression tree
+#Use the predicted values to compare to the actual values in the the test data
+#and calculate MSE
+Carseat_Sales_Predicted <- predict(tree_carseats, newdata = carseats_test)
+MSE <- mean((carseats_test$Sales - Carseat_Sales_Predicted)^2)
+MSE
+```
+
+This regression tree contains 15 terminal nodes.  We can see that the first split is based on shelf location.  If the shelf location is good then the remaining factors that are important to predicting sales are price and if the sales are in the US or not.  If the shelf location is bad or medium then we see that more features are relevant.  After shelf location it appears that price is the next most important feature to predicting car seat sales.
+
+(c) Use cross-validation in order to determine the optimal level of tree complexity.  Does pruning the tree improve the test MSE?
+
+```{r}
+#Take a look at the CP table
+rpart::printcp(tree_carseats)
+
+#Determine the value of CP for optimal tree complexity
+rpart::plotcp(tree_carseats)
+
+#Looks like a 6 terminal node tree is the optimal size with a CP of 0.033428
+
+#Now prune our regression tree based on the CV results
+prune_carseats <- rpart::prune(tree_carseats, cp = 0.0334)
+par(xpd = NA)
+plot(prune_carseats, uniform = TRUE)
+text(prune_carseats, use.n = TRUE, cex = 0.8)
+title(main = "3-leaf classification tree for car seats")
+
+#Now we can predict sales using our pruned tree and calculate MSE
+Pruned_Carseat_Sales_Predicted <- predict(prune_carseats, newdata = carseats_test)
+MSE <- mean((carseats_test$Sales - Pruned_Carseat_Sales_Predicted)^2)
+MSE
+```
+
+We see that MSE goes up slightly after pruning our tree using cross validation.
+
+(d) Use the bagging approach in order to analyze this data.  What test MSE do you obtain?  Use the importance() function to determine which variables are most important.
+
+```{r}
+#Using code from Lab 08 we can use a bagging approach
+set.seed(1)
+
+#Since carseats has 11 predictors we will set mtry to 10
+bagging_carseats <- randomForest::randomForest(Sales ~ ., data = carseats_train,
+                                               mtry = 10, importance = TRUE)
+bagging_carseats
+Bagging_Carseats_Predicted <- predict(bagging_carseats, newdata = dplyr::select(carseats_test, -Sales))
+MSE_bag   <- mean((carseats_test$Sales - Bagging_Carseats_Predicted)^2)
+MSE_bag
+
+#MSE is 2.605 which is a large improvement over our basic tree regression above
+
+#Now let's look at importance
+importance(bagging_carseats)    # built-in S3 print method for class `randomForest`
+varImpPlot(bagging_carseats)    # built-in S3 plot method for class `randomForest`
+```
+
+As mentioned before in part (b) after investigating the tree we notice that price and shelf location are clearly the most important features in the regression.  The importance plot make this even clearer.  Interestingly, price ranks higher in importance than shelf location, however shelf location is the root node of the regression tree.
+
+(e) Use random forests to analyze this data.  What test MSE do you obtain?  Use the importance() function to determine which variables are most important.  Describe the effect on m, the number of variables considered at each split, on the error rate obtained.
+
+```{r}
+#Using code from Lab 08 we can use a random forest approach
+set.seed(1)
+
+#random forest uses a default value of p/3 for mtry so we'll use the default for this one
+rf_carseats <- randomForest::randomForest(Sales ~ ., data = carseats_train, importance = TRUE)
+rf_carseats
+RF_Carseats_Predicted <- predict(rf_carseats, newdata = dplyr::select(carseats_test, -Sales))
+MSE_rf   <- mean((carseats_test$Sales - RF_Carseats_Predicted)^2)
+MSE_rf
+
+#MSE is 2.96 which is a large improvement over our basic tree regression above
+#but a bit worse than the using bagging
+
+#Now let's look at importance
+importance(rf_carseats)    # built-in S3 print method for class `randomForest`
+varImpPlot(rf_carseats)    # built-in S3 plot method for class `randomForest`
+```
+
+From the importance plots we see once again that shelf location and price are the two most important factors to this regression.  Using m=3 we see an MSE that is slightly higher than our pruned tree, but much lower than the MSE of the full tree.
+
+\pagebreak
+
+Question 5: 
+
+Text: Exercises 8.4, Applied Question #9
+
+This problem involves the OJ data set which is part of the ISLR package.
+
+(a) Create a training set containing a random sample of 800 observations, and a test set containing the remaining observations.
+
+```{r}
+#Add an ID column to OJ so we can split it into a training and test set
+OJ %<>% tibble::as.tibble()
+OJ %<>% dplyr::mutate(id  = dplyr::row_number())
+OJ
+dim(OJ)
+
+#set a seed for reproducibility
+set.seed(1)
+
+#split the OJ data into a test and training set
+
+n <- nrow(OJ)
+train_sample  <- sample(1:n, 800)
+OJ_train <- OJ[train_sample,]
+OJ_test <- OJ[-train_sample,]
+
+#Sanity check dimensions of training and test set
+dim(OJ_train)
+dim(OJ_test)
+```
+
+(b) Fit a tree to the training data, with Purchase as the response and the other variables as predictors.  Use the summary() function to produce summary statistics about the tree, and describe the results obtained.  What is the training error rate?  How many terminal nodes does the tree have?
+
+```{r}
+#Use the rpart() function to fit a tree to the training data
+OJ_tree_NS <- rpart(Purchase ~ ., data = dplyr::select(OJ_train, -id))
+printcp(OJ_tree_NS)
+
+#Calculate the training error rate by multiplying the root note error
+#and the xerror
+training_error <- 0.39375 * 0.36825
+training_error
+```
+
+(c) Type in the name of the tree object in order to get a detailed text output.  Pick one of the terminal nodes, and interpret the information displayed.
+
+```{r}
+OJ_tree_NS
+```
+
+If we look at the terminal node labeled node 4 the first piece of information we have is the decision made at that node.  In the case we are investigating the decision is made if the brand loyalty to Citrus Hill is greater than or equal to 0.7645725.  The next piece of information is the number of observations we are considering at that node, in this case 261.  The next value is the loss value and represents the number of observations that were misclassified.  In this case we see that 11 observations were classified as CH when they should have been classified to MM.  
+
+(d) Create a plot of the tree, and interpret the results.
+
+```{r}
+par(xpd = NA)                       
+plot(OJ_tree_NS, uniform = TRUE) 
+text(OJ_tree_NS, use.n = TRUE, cex = 0.8)   
+title(main = "CART tree for Citrus Hill/Minute Maid Purchase of Orange Juice")  
+```
+
+From this tree we see that the most important feature is the brand loyalty to Citrus Hill. In fact this feature is used again at the next level to further classify the data.  From the left branch we see that the price difference is important followed by the store it was sold in and then the week of purchase.  On the right branch we see that the sale price is important as well as if the Citrus Hill is on special.  
+
+(e) Predict the response on the test data, and producte a confusion matrix comparing the test labels to the predicted test labels.  What is the test error rate?
+
+```{r}
+OJ_pred <- tibble::tibble(Purchase = OJ_test$Purchase, 
+                          pred = predict(OJ_tree_NS,
+                                        newdata = OJ_test,
+                                        type = "class"))
+OJ_pred
+
+
+OJ_pred %>% yardstick::conf_mat(truth = Purchase, estimate = pred)  
+
+#Calculate test error rate
+OJ_fulltree_TE <-1 - (OJ_pred %>% yardstick::accuracy(truth = Purchase, estimate = pred) %>% 
+     purrr::pluck(".estimate"))
+OJ_fulltree_TE
+```
+
+(f) Apply the cv.tree() function to the training set in order to determine the optimal tree size.
+
+```{r}
+#Based on the lab and course lecture I think I am going to use
+#the printcp() function and plot it to determine the optimal 
+#tree size for OJ
+
+#Take a look at the CP table
+rpart::printcp(OJ_tree_NS)
+
+#Looks like a 4 terminal node tree is the optimal size 
+#since that is where xerror levels off
+```
+
+(g) Produce a plot with tree size on the x-axis and cross-validated classification error rate on the y-axis.
+
+```{r}
+#Determine the value of CP for optimal tree complexity
+#from a plot 
+rpart::plotcp(OJ_tree_NS)
+
+#using the rule of thumb the plot suggests a tree with 5
+#terminal nodes is the optimal tree size
+```
+
+(h) Which tree size corresponds to the lowest cross-validated classification error rate?
+
+```{r}
+best_cp <- OJ_tree_NS$cptable %>%
+  data.frame() %>%                      # easier to work with than matrices
+  dplyr::slice(which.min(.$xerror)) %>% # get the row where `xerror` is min
+  dplyr::pull("CP")                     # pull out `CP` from that row
+
+best_cp
+
+#A tree size of 9 produces a tree with the lowest cross-validated classification 
+#error
+```
+
+(i) Produce a pruned tree corresponding to the optimal tree size obtained using cross-validation.  If cross-validation does not lead to selection of a pruned tree, then create a pruned tree with five terminal nodes.
+
+```{r}
+#Now prune our classification tree with 5 terminal nodes
+prune_OJ <- rpart::prune(OJ_tree_NS, cp = 0.017)
+par(xpd = NA)
+plot(prune_OJ, uniform = TRUE)
+text(prune_OJ, use.n = TRUE, cex = 0.8)
+title(main = "5-leaf classification tree for Orange Juice purchase")
+```
+
+(j) Compare the training error rates between the pruned and unpruned trees.  Which is higher?
+
+```{r}
+#Compute the training error on the pruned tree
+printcp(prune_OJ)
+pruned_training_error <- 0.39375 * 0.47937
+pruned_training_error
+
+#compare with the training error on the full tree
+training_error
+```
+
+The training error of the unpruned tree is slightly higher than the pruned tree.
+
+(k) Compare the test error rates between the pruned and unpruned trees.  Which is higher?
+
+```{r}
+#Compute the test error on the pruned tree
+OJ_pruned_pred <- tibble::tibble(Purchase = OJ_test$Purchase, 
+                                  pred = predict(prune_OJ,
+                                        newdata = OJ_test,
+                                        type = "class"))
+
+OJ_pruned_pred %>% yardstick::conf_mat(truth = Purchase, estimate = pred)  
+
+#Calculate test error rate on the pruned tree
+1 - (OJ_pruned_pred %>% yardstick::accuracy(truth = Purchase, estimate = pred) %>% 
+     purrr::pluck(".estimate"))
+
+#Compare to the test error on the unpruned tree
+OJ_fulltree_TE
+```
+
+The test error of the pruned tree is slightly higher than the unpruned tree.  But we note that the test error rate is very close for both trees.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

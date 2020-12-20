@@ -1,0 +1,971 @@
+---
+title: "STAA 577 Assignment 4"
+author: "Jon Dollard"
+date: "9/15/2020"
+output: pdf_document
+---
+
+\pagebreak
+```{r setup, message = FALSE, warning = FALSE}
+options(warnPartialMatchArgs = FALSE)  # don't want these warnings
+library(magrittr)     # pipes
+library(tibble)       # tibbles
+library(dplyr)        # data wrangling
+library(purrr)        # iteration
+library(broom)        # summarizing models consistently
+library(ggplot2)      # tidy plotting
+library(ISLR)         # Wage data set
+library(MASS)         # Boston data set
+library(splines)      # fitting splines
+library(gam)          # General Additive Models
+library(boot)         # for `cv.glm`
+```
+
+Question 2: 
+
+Text: Exercises 7.9, Conceptual Question #3
+
+Suppose we fit a curve with basis functions $b_1(X)$ = X, $b_2(X)$ = $(X-1)^2I(X\ge1)$. (Note that I($X\ge1$) equals 1 for $X\ge 1$ and 0 otherwise.)  We fit the linear regression model
+
+Y = $\beta_0$ + $\beta_2b_1(X)$ + $\beta_2b_2(X)$ + $\epsilon$,
+
+and obtain the coefficient estimates $\hat{\beta_0}$ = 1, $\hat{\beta_1}$ = 1, $\hat{\beta_2}$ = -2. Sketch the estimated curve between X = -2 and X = 2.  Note the intercepts, slopes, and other relevant information.
+
+```{r}
+#Assign values for coefficients
+beta_hat_0 = 1
+beta_hat_1 = 1
+beta_hat_2 = -2
+
+#Assign a range of values for x for plotting
+X = seq(-2,2,0.05)
+
+#Y function
+Y = beta_hat_0 + beta_hat_1*X + beta_hat_2 * ((X-1)^2) * I(X>1)
+
+#plot the function
+plot(X,Y)
+```
+
+We can see from the plot as well as evaluating the function Y(x) that in the range of values for X we see an X intercept at the point (-1,0) and a Y intercept at the point (0,1).  The function is linear from X = -2 to X = 1 (indicator is zero so the quadratic term is zero) and quadratic and concave down from X = 1 to X = 2 (indicator is 1 in this range).
+
+\pagebreak
+
+Question 3: 
+
+Text: Exercises 7.9, Applied Question #6
+
+In this exercise, you will further analyze the Wage data set considered throughout this chapter.
+
+(a) Perform polynomial reression to predict wage using age.  Use cross-validation to select the optimal degree d for the polynomial.  What degree was chosen, and how does this compare to the results of hypothesis testing using ANOVA?  Make a plot of the resulting polynomial fit to the data.
+
+```{r}
+#Convert the wage data set to a tibble for further use on this problem
+Wage %<>% as.tibble()     # convert to tibble
+#Wage                     # look at tibble to see data
+age      <- Wage$age      # make variable globally available downstream
+wage     <- Wage$wage     # make variable globally available downstream
+
+#Use the cv.glm() function in r to implement k-fold CV, choose K=10
+#Set a seed so results can be reproduced
+set.seed(1)
+#Create a vector to store the MSE for the CV
+CV_MSE = rep(0,10)
+#Use a for loop to determine the best degree up to a d=10
+for (i in 1:10) {
+  glm_fit = glm(wage ~ poly(age, i), data = Wage)
+  CV_MSE[i] = cv.glm(Wage, glm_fit, K=10)$delta[1]
+}
+#take a look at a list of the MSE's associated with each degree
+CV_MSE
+
+#Plot the CV MSE vs. the degree of polynomial fit
+plot(x = 1:10, y = CV_MSE, xlab = "Degree of Polynomial", ylab = "CV MSE", type = "l")
+points(4, CV_MSE[4], col = "red", cex = 2.1, pch = 20)
+
+#Do ANOVA for hypothesis testing the degree polynomial
+fit_1 <- stats::lm(wage ~ age, data = Wage)
+fit_2 <- stats::lm(wage ~ poly(age, 2), data = Wage)
+fit_3 <- stats::lm(wage ~ poly(age, 3), data = Wage)
+fit_4 <- stats::lm(wage ~ poly(age, 4), data = Wage)
+fit_5 <- stats::lm(wage ~ poly(age, 5), data = Wage)
+fit_6 <- stats::lm(wage ~ poly(age, 6), data = Wage)
+fit_7 <- stats::lm(wage ~ poly(age, 7), data = Wage)
+fit_8 <- stats::lm(wage ~ poly(age, 8), data = Wage)
+fit_9 <- stats::lm(wage ~ poly(age, 9), data = Wage)
+fit_10 <- stats::lm(wage ~ poly(age, 10), data = Wage)
+anova(fit_1, fit_2, fit_3, fit_4, fit_5, fit_6, fit_7, fit_8, fit_9, fit_10)
+```
+
+It appears that the best fit degree from both cross validation and ANOVA is a polynomial fit of degree 4.  While we do see some lower values for MSE beyond degree 4 it is not a significant enough reduction to warrant a choice of higher degree.  Looking at the ANOVA table also confirms this.
+
+```{r}
+#Plot the resulting fit to the data using a degree 4 polynomial
+
+#Create a degree 4 polynomial model using the Wage data set
+deg4_fit <- lm(wage ~ poly(age, degree = 4), data = Wage)
+broom::tidy(deg4_fit)
+
+agelims  <- range(age)
+age_grid <- seq(from = agelims[1], to = agelims[2])  
+
+fit_preds <- predict(deg4_fit, newdata = data.frame(age = age_grid), se = TRUE)
+up        <- fit_preds$fit + 2 * fit_preds$se.fit
+lo        <- fit_preds$fit - 2 * fit_preds$se.fit
+
+#Create a data frame to use with ggplot
+df_fit <- data.frame(deg4_fit = fit_preds$fit,
+                     age_grid = age_grid,
+                     up = up,
+                     lo = lo) %>% tibble::as.tibble()
+
+data.frame(age = age, wage = wage) %>% 
+ggplot(aes(x = age, y = wage)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-4 Polynomial") +
+  geom_line(data = df_fit, aes(x = age_grid, y = deg4_fit), col = "blue") +
+  geom_line(data = df_fit, aes(x = age_grid, y = up),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit, aes(x = age_grid, y = lo),
+            col = "red", linetype = "dashed")
+```
+
+(b) Fit a step function to predict wage using age, and perform cross-validation to choose the optimal number of cuts.  Make a plot of the fit obtained.
+
+```{r}
+#Use the cv.glm() function in r to implement k-fold CV, choose K=10
+#Set a seed so results can be reproduced
+set.seed(1)
+
+#Create a vector to store the MSE for the CV
+CV_Cuts_MSE = rep(0,10)
+
+#Use a for loop to determine the best number of cuts up to 10
+for (i in 2:10) {
+  Wage$age_cuts = cut(age, i)
+  step_fit = glm(wage ~ age_cuts, data = Wage)
+  CV_Cuts_MSE[i] = cv.glm(Wage, step_fit, K=10)$delta[1]
+}
+
+#take a look at a list of the MSE's associated with each cut
+CV_Cuts_MSE
+
+#Plot the CV Cuts MSE vs. the number of cuts
+plot(x = 2:10, y = CV_Cuts_MSE[-1], xlab = "Number of Cuts", ylab = "CV Cuts MSE", type = "l")
+points(8, CV_Cuts_MSE[8], col = "red", cex = 2.1, pch = 20)
+```
+
+It appears that the optimal number of cuts chosen by K fold cross validation is 8.
+
+```{r}
+#Now fit the Wage data using a step function and 8 cuts and plot it with the data
+step_fit <- glm(wage ~ cut(age, 8), data = Wage)
+broom::tidy(step_fit)
+
+agelims  <- range(age)
+age_grid <- seq(from = agelims[1], to = agelims[2])  
+
+step_fit_preds <- predict(step_fit, newdata = data.frame(age = age_grid), se = TRUE)
+up <- step_fit_preds$fit + 2 * step_fit_preds$se.fit
+lo <- step_fit_preds$fit - 2 * step_fit_preds$se.fit
+
+#Create a data frame to use with ggplot
+df_step_fit <- data.frame(step_fit = step_fit_preds$fit,
+                     age_grid = age_grid,
+                     up = up,
+                     lo = lo) %>% tibble::as.tibble()
+
+data.frame(age = age, wage = wage) %>% 
+ggplot(aes(x = age, y = wage)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Step Function 8 Cuts") +
+  geom_line(data = df_step_fit, aes(x = age_grid, y = step_fit), col = "blue") +
+  geom_line(data = df_step_fit, aes(x = age_grid, y = up),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_step_fit, aes(x = age_grid, y = lo),
+            col = "red", linetype = "dashed")
+
+```
+
+\pagebreak
+
+Question 4: 
+
+Text: Exercises 7.9, Applied Question #9
+
+This question uses the variables dis (the weighted mean of distances to five Boston employment centers) and nox (nitrogen oxides concentration in parts per 10 million) from the Boston data.  We will treat dis as the predictor and nox as the response.
+
+(a) Use the poly() function to fit a cubic polynomial regression to predict nox using dis.  Report the regression output, and plot the resulting data and polynomial fits.
+
+```{r}
+#Convert the Boston data set to a tibble for further use on this problem
+Boston %<>% as.tibble()     # convert to tibble
+nox      <- Boston$nox      # make variable globally available downstream
+dis      <- Boston$dis      # make variable globally available downstream
+
+deg3_fit <- lm(nox ~ poly(dis, degree = 3), data = Boston)
+broom::tidy(deg3_fit)
+#summary(deg3_fit)
+
+dislims  <- range(dis)
+dis_grid <- seq(from = dislims[1], to = dislims[2])  
+
+fit_preds <- predict(deg3_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up        <- fit_preds$fit + 2 * fit_preds$se.fit
+lo        <- fit_preds$fit - 2 * fit_preds$se.fit
+
+#Create a data frame to use with ggplot
+df_fit <- data.frame(deg3_fit = fit_preds$fit,
+                     dis_grid = dis_grid,
+                     up = up,
+                     lo = lo) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-3 Polynomial Fit") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = deg3_fit), col = "blue") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = up),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = lo),
+            col = "red", linetype = "dashed")
+
+```
+
+(b) Plot the polynomial fits for a range of different polynomial degrees (say, from 1 to 10), and report the associated residual sum of squares.
+
+```{r}
+#Fit the data with a range of degrees
+deg1_fit <- lm(nox ~ poly(dis, degree = 1), data = Boston)
+deg2_fit <- lm(nox ~ poly(dis, degree = 2), data = Boston)
+deg3_fit <- lm(nox ~ poly(dis, degree = 3), data = Boston)
+deg4_fit <- lm(nox ~ poly(dis, degree = 4), data = Boston)
+deg5_fit <- lm(nox ~ poly(dis, degree = 5), data = Boston)
+deg6_fit <- lm(nox ~ poly(dis, degree = 6), data = Boston)
+deg7_fit <- lm(nox ~ poly(dis, degree = 7), data = Boston)
+deg8_fit <- lm(nox ~ poly(dis, degree = 8), data = Boston)
+deg9_fit <- lm(nox ~ poly(dis, degree = 9), data = Boston)
+deg10_fit <- lm(nox ~ poly(dis, degree = 10), data = Boston)
+#broom::tidy(deg1_fit)
+#broom::tidy(deg2_fit)
+#broom::tidy(deg3_fit)
+#broom::tidy(deg4_fit)
+#broom::tidy(deg5_fit)
+#broom::tidy(deg6_fit)
+#broom::tidy(deg7_fit)
+#broom::tidy(deg8_fit)
+#broom::tidy(deg9_fit)
+#broom::tidy(deg10_fit)
+
+dislims  <- range(dis)
+dis_grid <- seq(from = dislims[1], to = dislims[2])  
+
+#Prediction results from the fits
+fit_preds1 <- predict(deg1_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up1        <- fit_preds1$fit + 2 * fit_preds$se.fit
+lo1        <- fit_preds1$fit - 2 * fit_preds$se.fit
+
+fit_preds2 <- predict(deg2_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up2        <- fit_preds2$fit + 2 * fit_preds$se.fit
+lo2        <- fit_preds2$fit - 2 * fit_preds$se.fit
+
+fit_preds3 <- predict(deg3_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up3        <- fit_preds3$fit + 2 * fit_preds$se.fit
+lo3        <- fit_preds3$fit - 2 * fit_preds$se.fit
+
+fit_preds4 <- predict(deg4_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up4        <- fit_preds4$fit + 2 * fit_preds$se.fit
+lo4        <- fit_preds4$fit - 2 * fit_preds$se.fit
+
+fit_preds5 <- predict(deg5_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up5        <- fit_preds5$fit + 2 * fit_preds$se.fit
+lo5        <- fit_preds5$fit - 2 * fit_preds$se.fit
+
+fit_preds6 <- predict(deg6_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up6        <- fit_preds6$fit + 2 * fit_preds$se.fit
+lo6        <- fit_preds6$fit - 2 * fit_preds$se.fit
+
+fit_preds7 <- predict(deg7_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up7        <- fit_preds7$fit + 2 * fit_preds$se.fit
+lo7        <- fit_preds7$fit - 2 * fit_preds$se.fit
+
+fit_preds8 <- predict(deg8_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up8        <- fit_preds8$fit + 2 * fit_preds$se.fit
+lo8        <- fit_preds8$fit - 2 * fit_preds$se.fit
+
+fit_preds9 <- predict(deg9_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up9        <- fit_preds9$fit + 2 * fit_preds$se.fit
+lo9        <- fit_preds9$fit - 2 * fit_preds$se.fit
+
+fit_preds10 <- predict(deg10_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up10        <- fit_preds10$fit + 2 * fit_preds$se.fit
+lo10        <- fit_preds10$fit - 2 * fit_preds$se.fit
+
+
+#Create data frames to use with ggplot
+df_fit1 <- data.frame(deg1_fit = fit_preds1$fit,
+                     dis_grid = dis_grid,
+                     up1 = up1,
+                     lo1 = lo1) %>% tibble::as.tibble()
+
+df_fit2 <- data.frame(deg2_fit = fit_preds2$fit,
+                     dis_grid = dis_grid,
+                     up2 = up2,
+                     lo2 = lo2) %>% tibble::as.tibble()
+
+df_fit3 <- data.frame(deg3_fit = fit_preds3$fit,
+                     dis_grid = dis_grid,
+                     up3 = up3,
+                     lo3 = lo3) %>% tibble::as.tibble()
+
+
+df_fit4 <- data.frame(deg4_fit = fit_preds4$fit,
+                     dis_grid = dis_grid,
+                     up4 = up4,
+                     lo4 = lo4) %>% tibble::as.tibble()
+
+
+df_fit5 <- data.frame(deg5_fit = fit_preds5$fit,
+                     dis_grid = dis_grid,
+                     up5 = up5,
+                     lo5 = lo5) %>% tibble::as.tibble()
+
+df_fit6 <- data.frame(deg6_fit = fit_preds6$fit,
+                     dis_grid = dis_grid,
+                     up6 = up6,
+                     lo6 = lo6) %>% tibble::as.tibble()
+
+df_fit7 <- data.frame(deg7_fit = fit_preds7$fit,
+                     dis_grid = dis_grid,
+                     up7 = up7,
+                     lo7 = lo7) %>% tibble::as.tibble()
+
+df_fit8 <- data.frame(deg8_fit = fit_preds8$fit,
+                     dis_grid = dis_grid,
+                     up8 = up8,
+                     lo8 = lo8) %>% tibble::as.tibble()
+
+df_fit9 <- data.frame(deg9_fit = fit_preds9$fit,
+                     dis_grid = dis_grid,
+                     up9 = up9,
+                     lo9 = lo9) %>% tibble::as.tibble()
+
+
+df_fit10 <- data.frame(deg10_fit = fit_preds10$fit,
+                     dis_grid = dis_grid,
+                     up10 = up10,
+                     lo10 = lo10) %>% tibble::as.tibble()
+
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-1 Polynomial Fit") +
+  geom_line(data = df_fit1, aes(x = dis_grid, y = deg1_fit), col = "blue") +
+  geom_line(data = df_fit1, aes(x = dis_grid, y = up1),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit1, aes(x = dis_grid, y = lo1),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-2 Polynomial Fit") +
+  geom_line(data = df_fit2, aes(x = dis_grid, y = deg2_fit), col = "blue") +
+  geom_line(data = df_fit2, aes(x = dis_grid, y = up2),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit2, aes(x = dis_grid, y = lo2),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-3 Polynomial Fit") +
+  geom_line(data = df_fit3, aes(x = dis_grid, y = deg3_fit), col = "blue") +
+  geom_line(data = df_fit3, aes(x = dis_grid, y = up3),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit3, aes(x = dis_grid, y = lo3),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-4 Polynomial Fit") +
+  geom_line(data = df_fit4, aes(x = dis_grid, y = deg4_fit), col = "blue") +
+  geom_line(data = df_fit4, aes(x = dis_grid, y = up4),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit4, aes(x = dis_grid, y = lo4),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-5 Polynomial Fit") +
+  geom_line(data = df_fit5, aes(x = dis_grid, y = deg5_fit), col = "blue") +
+  geom_line(data = df_fit5, aes(x = dis_grid, y = up5),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit5, aes(x = dis_grid, y = lo5),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-6 Polynomial Fit") +
+  geom_line(data = df_fit6, aes(x = dis_grid, y = deg6_fit), col = "blue") +
+  geom_line(data = df_fit6, aes(x = dis_grid, y = up6),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit6, aes(x = dis_grid, y = lo6),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-7 Polynomial Fit") +
+  geom_line(data = df_fit7, aes(x = dis_grid, y = deg7_fit), col = "blue") +
+  geom_line(data = df_fit7, aes(x = dis_grid, y = up7),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit7, aes(x = dis_grid, y = lo7),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-8 Polynomial Fit") +
+  geom_line(data = df_fit8, aes(x = dis_grid, y = deg8_fit), col = "blue") +
+  geom_line(data = df_fit8, aes(x = dis_grid, y = up8),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit8, aes(x = dis_grid, y = lo8),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-9 Polynomial Fit") +
+  geom_line(data = df_fit9, aes(x = dis_grid, y = deg9_fit), col = "blue") +
+  geom_line(data = df_fit9, aes(x = dis_grid, y = up9),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit9, aes(x = dis_grid, y = lo9),
+            col = "red", linetype = "dashed")
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-10 Polynomial Fit") +
+  geom_line(data = df_fit10, aes(x = dis_grid, y = deg10_fit), col = "blue") +
+  geom_line(data = df_fit10, aes(x = dis_grid, y = up10),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit10, aes(x = dis_grid, y = lo10),
+            col = "red", linetype = "dashed")
+
+
+#Display the RSS using ANOVA
+anova(deg1_fit, deg2_fit, deg3_fit, deg4_fit, deg5_fit, 
+      deg6_fit, deg7_fit, deg8_fit, deg9_fit, deg10_fit)
+```
+
+(c) Perform cross-validation or another approach to select the optimal degree for the polynomial, and explain your results.
+
+```{r}
+#Use the cv.glm() function in r to implement k-fold CV, choose K=10
+#Set a seed so results can be reproduced
+set.seed(1)
+#Create a vector to store the MSE for the CV
+CV_MSE = rep(0,10)
+#Use a for loop to determine the best degree up to a d=10
+for (i in 1:10) {
+  glm_fit = glm(nox ~ poly(dis, i), data = Boston)
+  CV_MSE[i] = cv.glm(Boston, glm_fit, K=10)$delta[1]
+}
+#take a look at a list of the MSE's associated with each degree
+CV_MSE
+
+#Looks like a degree 3 polynomial is the best fit from K-fold CV
+
+#Create a degree 3 polynomial model using the Wage data set
+deg3_fit <- lm(nox ~ poly(dis, degree = 3), data = Boston)
+broom::tidy(deg3_fit)
+summary(deg3_fit)
+
+dislims  <- range(dis)
+dis_grid <- seq(from = dislims[1], to = dislims[2], 0.1)  
+
+fit_preds <- predict(deg3_fit, newdata = data.frame(dis = dis_grid), se = TRUE)
+up        <- fit_preds$fit + 2 * fit_preds$se.fit
+lo        <- fit_preds$fit - 2 * fit_preds$se.fit
+
+#Create a data frame to use with ggplot
+df_fit <- data.frame(deg3_fit = fit_preds$fit,
+                     dis_grid = dis_grid,
+                     up = up,
+                     lo = lo) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "Degree-3 Polynomial Fit") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = deg3_fit), col = "blue") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = up),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = lo),
+            col = "red", linetype = "dashed")
+```
+
+(d) Use the bs() function to fit a regression spline to predict nox from dis.  Report the output for the fit using four degrees of freedom.  How did you choose the knots?  Plot the resulting fit.
+
+```{r}
+#Fit a b spline to predict nox from dis
+
+b_spline_fit <- stats::lm(nox ~ splines::bs(dis, df = 4),
+                          data = Boston)
+
+#There is one interior knot at the 50th percentile of dis
+attr(bs(dis, df = 4), "knots")
+attr(bs(dis, df = 4), "degree")
+attr(bs(dis, df = 4), "Boundary.knots")
+attr(bs(dis, df = 4), "intercept")
+
+#Check out a summary of the fit
+summary(b_spline_fit)
+
+#Make a prediction vector
+bs_pred      <- predict(b_spline_fit,
+                        newdata = data.frame(dis = dis_grid),
+                        se = TRUE)
+
+up        <- bs_pred$fit + 2 * bs_pred$se.fit
+lo        <- bs_pred$fit - 2 * bs_pred$se.fit
+
+#Create a data frame to use with ggplot
+df_fit <- data.frame(b_spline_fit = bs_pred$fit,
+                     dis_grid = dis_grid,
+                     up = up,
+                     lo = lo) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "B Spline Fit with 4 DF") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = b_spline_fit), col = "blue") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = up),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit, aes(x = dis_grid, y = lo),
+            col = "red", linetype = "dashed")+
+  theme_bw()+NULL
+
+```
+
+I let the bs() function in R choose the knots based upon the degrees of freedom = 4 in the problem statement.  It does this by choosing knots that correspond to the number of degrees of freeedom selected.  In this case, with DF=4, we have 1 interior knot at the 50th percentile of dis.
+
+(e) Now fit a regression spline for a range of degrees of freedom, and plot the resulting fits and report the resulting RSS.  Describe the results obtained.
+
+```{r}
+#Let's fit b-splines for DF = 5, 10, 20, 30, 40, and 50
+b_spline_fit5 <- stats::lm(nox ~ splines::bs(dis, df = 5),
+                          data = Boston)
+
+b_spline_fit10 <- stats::lm(nox ~ splines::bs(dis, df = 10),
+                          data = Boston)
+
+b_spline_fit20 <- stats::lm(nox ~ splines::bs(dis, df = 20),
+                          data = Boston)
+
+b_spline_fit30 <- stats::lm(nox ~ splines::bs(dis, df = 30),
+                          data = Boston)
+
+b_spline_fit40 <- stats::lm(nox ~ splines::bs(dis, df = 40),
+                          data = Boston)
+
+b_spline_fit50 <- stats::lm(nox ~ splines::bs(dis, df = 50),
+                          data = Boston)
+
+#Plot the resulting fits
+#Make a prediction vector
+bs_pred5      <- predict(b_spline_fit5,
+                        newdata = data.frame(dis = dis_grid),
+                        se = TRUE)
+
+up5        <- bs_pred5$fit + 2 * bs_pred5$se.fit
+lo5        <- bs_pred5$fit - 2 * bs_pred5$se.fit
+
+#Create a data frame to use with ggplot
+df_fit5 <- data.frame(b_spline_fit5 = bs_pred5$fit,
+                     dis_grid = dis_grid,
+                     up5 = up5,
+                     lo5 = lo5) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "B Spline Fit with 5 DF") +
+  geom_line(data = df_fit5, aes(x = dis_grid, y = b_spline_fit5), col = "blue") +
+  geom_line(data = df_fit5, aes(x = dis_grid, y = up5),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit5, aes(x = dis_grid, y = lo5),
+            col = "red", linetype = "dashed")+
+  theme_bw()+NULL
+
+#Make a prediction vector
+bs_pred10      <- predict(b_spline_fit10,
+                        newdata = data.frame(dis = dis_grid),
+                        se = TRUE)
+
+up10        <- bs_pred10$fit + 2 * bs_pred10$se.fit
+lo10        <- bs_pred10$fit - 2 * bs_pred10$se.fit
+
+#Create a data frame to use with ggplot
+df_fit10 <- data.frame(b_spline_fit10 = bs_pred10$fit,
+                     dis_grid = dis_grid,
+                     up10 = up10,
+                     lo10 = lo10) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "B Spline Fit with 10 DF") +
+  geom_line(data = df_fit10, aes(x = dis_grid, y = b_spline_fit10), col = "blue") +
+  geom_line(data = df_fit10, aes(x = dis_grid, y = up10),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit10, aes(x = dis_grid, y = lo10),
+            col = "red", linetype = "dashed")+
+  theme_bw()+NULL
+
+#Make a prediction vector
+bs_pred20      <- predict(b_spline_fit20,
+                        newdata = data.frame(dis = dis_grid),
+                        se = TRUE)
+
+up20        <- bs_pred20$fit + 2 * bs_pred20$se.fit
+lo20        <- bs_pred20$fit - 2 * bs_pred20$se.fit
+
+#Create a data frame to use with ggplot
+df_fit20 <- data.frame(b_spline_fit20 = bs_pred20$fit,
+                     dis_grid = dis_grid,
+                     up20 = up20,
+                     lo20 = lo20) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "B Spline Fit with 20 DF") +
+  geom_line(data = df_fit20, aes(x = dis_grid, y = b_spline_fit20), col = "blue") +
+  geom_line(data = df_fit20, aes(x = dis_grid, y = up20),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit20, aes(x = dis_grid, y = lo20),
+            col = "red", linetype = "dashed")+
+  theme_bw()+NULL
+
+#Make a prediction vector
+bs_pred30      <- predict(b_spline_fit30,
+                        newdata = data.frame(dis = dis_grid),
+                        se = TRUE)
+
+up30        <- bs_pred30$fit + 2 * bs_pred30$se.fit
+lo30        <- bs_pred30$fit - 2 * bs_pred30$se.fit
+
+#Create a data frame to use with ggplot
+df_fit30 <- data.frame(b_spline_fit30 = bs_pred30$fit,
+                     dis_grid = dis_grid,
+                     up30 = up30,
+                     lo30 = lo30) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "B Spline Fit with 30 DF") +
+  geom_line(data = df_fit30, aes(x = dis_grid, y = b_spline_fit30), col = "blue") +
+  geom_line(data = df_fit30, aes(x = dis_grid, y = up30),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit30, aes(x = dis_grid, y = lo30),
+            col = "red", linetype = "dashed")+
+  theme_bw()+NULL
+
+#Make a prediction vector
+bs_pred40      <- predict(b_spline_fit40,
+                        newdata = data.frame(dis = dis_grid),
+                        se = TRUE)
+
+up40        <- bs_pred40$fit + 2 * bs_pred40$se.fit
+lo40        <- bs_pred40$fit - 2 * bs_pred40$se.fit
+
+#Create a data frame to use with ggplot
+df_fit40 <- data.frame(b_spline_fit40 = bs_pred40$fit,
+                     dis_grid = dis_grid,
+                     up40 = up40,
+                     lo40 = lo40) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "B Spline Fit with 40 DF") +
+  geom_line(data = df_fit40, aes(x = dis_grid, y = b_spline_fit40), col = "blue") +
+  geom_line(data = df_fit40, aes(x = dis_grid, y = up40),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit40, aes(x = dis_grid, y = lo40),
+            col = "red", linetype = "dashed")+
+  theme_bw()+NULL
+
+#Make a prediction vector
+bs_pred50      <- predict(b_spline_fit50,
+                        newdata = data.frame(dis = dis_grid),
+                        se = TRUE)
+
+up50        <- bs_pred50$fit + 2 * bs_pred50$se.fit
+lo50        <- bs_pred50$fit - 2 * bs_pred50$se.fit
+
+#Create a data frame to use with ggplot
+df_fit50 <- data.frame(b_spline_fit50 = bs_pred50$fit,
+                     dis_grid = dis_grid,
+                     up50 = up50,
+                     lo50 = lo50) %>% tibble::as.tibble()
+
+data.frame(dis = dis, nox = nox) %>% 
+ggplot(aes(x = dis, y = nox)) +
+  geom_point(alpha = 0.25) +
+  labs(title = "B Spline Fit with 50 DF") +
+  geom_line(data = df_fit50, aes(x = dis_grid, y = b_spline_fit50), col = "blue") +
+  geom_line(data = df_fit50, aes(x = dis_grid, y = up50),
+            col = "red", linetype = "dashed") +
+  geom_line(data = df_fit50, aes(x = dis_grid, y = lo50),
+            col = "red", linetype = "dashed")+
+  theme_bw()+NULL
+
+#Let's get the RSS for each fit
+sum(b_spline_fit5$residuals^2)
+sum(b_spline_fit10$residuals^2)
+sum(b_spline_fit20$residuals^2)
+sum(b_spline_fit30$residuals^2)
+sum(b_spline_fit40$residuals^2)
+sum(b_spline_fit50$residuals^2)
+```
+
+We can observe that as we let the degrees of freedom increase we notice that the RSS decreases indicating that we are reducing the model bias, however we also see that we are overfitting as our confidence intervals widen indicating to us that our model variance is increasing.  We can clearly see from our plots this bias-variance tradeoff happening as we increase our degrees of freedom.
+
+(f) Perform cross-validation or another approach in order to select the best degrees of freedom for a regression spline on this data.  Describe your results.
+
+```{r, warning=FALSE}
+#Use the cv.glm() function in r to implement k-fold CV, choose K=10
+#Set a seed so results can be reproduced
+set.seed(1)
+
+#Create a vector to store the MSE for the CV
+CV_MSE = rep(0,47)
+
+#Use a for loop to determine the best degree of freedom to use up to a df=50
+for (i in 4:50) {
+  b_spline_fit <- stats::glm(nox ~ splines::bs(dis, df = i),
+                          data = Boston)
+  CV_MSE[i-3] = cv.glm(Boston, b_spline_fit, K=10)$delta[1]
+}
+
+table(CV_MSE)
+
+#Plot the CV MSE vs. Number of Degrees of Freedom
+plot(x = 4:50, y = CV_MSE, xlab = "Degrees of Freedom", ylab = "CV MSE", type = "l")
+
+#Which point represents the minimum
+which.min(CV_MSE)
+
+#Since MSE[1] = 4 degrees of freedom since that is where we started
+#which.min returns 4 which corresponds to 7 degrees of freedom
+
+#Show the point on the plot that represents the minimum MSE
+points(7, CV_MSE[4], col = "red", cex = 1.8, pch = 20)
+
+```
+
+From K-fold cross validation we can see that 7 degrees of freedom provides a fit that minimizes the MSE.
+
+\pagebreak
+
+Question 5 (Extra Credit): 
+
+Text: Exercises 7.9, Applied Question #11
+
+In Section 7.7, it was mentioned that GAMs are generally fit using a backfitting approach.  The idea behind backfitting is actually quite simple.  We will now explore backfitting in the context of multiple linear regression.
+
+Suppose that we would like to perform multiple linear regression, but we do not have software to do so.  Instead, we only have software to perform simple linear regression.  Therefore, we take the following iterative approach:  we repeatedly hold all but one coefficient estimate fixed at its current value, and update only that coefficient estimate using a simple linear regression.  The process is continued until convergence--that is, until the coefficient estimates stop changing.
+
+We now try this out on a toy example.
+
+(a) Generate a response Y and two predictors $X_1$ and $X_2$, with n = 100.
+
+```{r}
+#use rnorm() to generate a set of values for a 2 predictors X1 and X2 and a 
+#response Y, set a seed so results can be reproduced
+set.seed(1)
+n = 100
+X1 <- rnorm(n)
+X2 <- rnorm(n)
+Y <- rnorm(n)
+```
+
+(b) Initialize $\hat{\beta_1}$ to take on a value of your choice.  It does not matter what value you choose.
+
+```{r}
+Beta1_hat <- 21
+```
+
+(c) Keeping $\hat{\beta_1}$ fixed, fit the model
+
+$Y - \hat{\beta_1}X_1 = \beta_0 + \beta_2X_2 + \epsilon$.
+
+```{r}
+a = Y-Beta1_hat*X1
+Beta2_hat = lm(a ~ X2)$coef[2]
+Beta2_hat
+```
+
+(d) Keeping $\hat{\beta_2}$ fixed, fit the model
+
+$Y - \hat{\beta_2}X_2 = \beta_0 + \beta_1X_1 + \epsilon$.
+
+```{r}
+a = Y-Beta2_hat*X2
+Beta1_hat = lm(a ~ X1)$coef[2]
+Beta1_hat
+```
+
+(e) Write a for loop to repeat (c) and (d) 1,000 times.  Report the estimates for $\hat{\beta_0}$, $\hat{\beta_1}$, and $\hat{\beta_2}$ at each iteration of the for loop.  Create a plot in which each of these values is displayed, with $\hat{\beta_0}$, $\hat{\beta_1}$, and $\hat{\beta_2}$ each shown in a different color.
+
+```{r}
+#Initial loop values
+n = 1000
+Beta0_hat = rep(0,1000)
+Beta0_hat2 = rep(0,1000)
+Beta1_hat = rep(0,1001)
+Beta1_hat[1] = 21
+Beta2_hat = rep(0,1000)
+
+for (i in 1:n){
+  a = Y-Beta1_hat[i]*X1
+  Beta2_hat[i] = lm(a ~ X2)$coef[2]
+  Beta0_hat2[i] = lm(a ~X2)$coef[1]
+  a = Y-Beta2_hat[i]*X2
+  Beta1_hat[i+1] = lm(a ~ X1)$coef[2]
+  Beta0_hat[i] = lm(a ~ X1)$coef[1]
+  
+}
+
+#Take a look at a table of the coefficients
+table(Beta0_hat)
+table(Beta0_hat2)
+table(Beta1_hat)
+table(Beta2_hat)
+
+#Take a look at the 4th iteration coefficients
+Beta0_hat[4]
+Beta0_hat2[4]
+Beta1_hat[4]
+Beta2_hat[4]
+
+
+#We can see from the table it actually only took 4 iterations for the coefficients to 
+#converge.  So it converges very quickly
+
+x <- seq(1,10,1)
+
+#Create a data frame to use with ggplot
+df_fit <- data.frame(Beta0_hat = Beta0_hat[1:10],
+                     Beta1_hat = Beta1_hat[1:10],
+                     Beta2_hat = Beta2_hat[1:10],
+                     x = x) %>% tibble::as.tibble()
+
+#Now we can plot of the coefficients vs. the iteration to see this graphically
+ggplot(df_fit, aes(x = x)) +
+  labs(title = "Betas vs Iterations") +
+  geom_line(data = df_fit, aes(y = Beta0_hat), col = "red") +
+  geom_line(data = df_fit, aes(y = Beta1_hat), col = "blue") +
+  geom_line(data = df_fit, aes(y = Beta2_hat), col = "green") +
+  theme_bw()+NULL
+```
+
+(f) Compare your answer in (e) to the resultes of simply performing multiple linear regression to predict Y using $X_1$ and $X_2$.  Use the abline() function to overlay those multiple linear regression coefficient estimates on the plot obtained in (e).
+
+```{r}
+#Use lm() to get a linear model fit and look at the summary
+lm_fit <- lm(Y ~ X1 + X2)
+summary(lm_fit)
+```
+
+(g) On this data set, how many backfitting iterations were required in order to obtain a "good" approximation to the multiple regression coefficent estimates?
+
+It only took 4 iterations to obtain a good approximation of the multiple regression coefficient estimates.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,319 @@
+---
+title: "STAA 577 Assignment 2"
+author: "Jon Dollard"
+date: "9/2/2020"
+output: pdf_document
+---
+
+```{r setup, warning = FALSE, message = FALSE, include=FALSE}
+library(tibble)           # special type of data frame
+library(magrittr)         # pipes
+library(dplyr)            # data manipulation
+library(ggplot2)          # pretty plots
+library(tidyr)            # reshape data frames; mostly for ggplots
+library(MASS)
+library(ISLR)
+library(boot)
+
+```
+
+Conceptual Question 2.
+
+We will now derive the probability that a given observation is part of a bootstrap sample.  Suppose that we obtain a bootstrap sample from a set of n observations.
+
+(a) What is the probability that the first bootstrap observation is not the jth observation from the original sample?  Justify your answer.
+
+We can view this as the the probability that the first bootstrap observation is not the jth observation as 1 - (the probability that the first bootstrap observation is the jth observation).
+
+First we need to calculate the P(the first bootstrap observation is the jth observation).  To do this we note that our observations are independent of each other and equally likely and that we sample with replacement.  Therefore,
+
+$$P(the\ first\ bootstrap\ observation\ is\ the\ jth\ observation) = \frac{1}{n}$$  Then,
+
+$$P(the\ first\ bootstrap\ observation\ is\ NOT\ the\ jth\ observation) = 1 - \frac{1}{n}$$
+
+(b) What is the probability that the second bootstrap observation is not the jth observation from the orignal sample?
+
+Since the first bootstrap observation is independent of the second bootstrap observation and the sampling is completed with replacement then we have the same probability as part (a),
+
+$$P(the\ second\ bootstrap\ observation\ is\ NOT\ the\ jth\ observation) = 1 - \frac{1}{n}$$
+
+(c) $$Argue\ that\ the\ probability\ that\ the\ jth\ observation\ is\ not\ in\ the\ bootstrap\ sample\ is\ (1-\frac{1}{n})^n$$
+
+Since the bootstrap sampling for each observation is completed independently we can use the product rule for probability.  Then, the P(the jth observation is not in the bootstrap sample) = P(first bootstrap observation is not the jth) * P(second bootstrap observation is not the jth) * ... * P(nth bootstrap observation is not the jth).  Therefore,
+
+$$P(the\ jth\ observation\ is\ NOT\ in\ the\ bootstrap\ sample) = (1-\frac{1}{n})^n$$
+
+(d) When n = 5, what is the probability that the jth observation is in the bootstrap sample?
+
+```{r}
+#Calculate the probability that the jth observation is in the bootstrap sample
+n = 5
+p_jth_in_bs <- 1-(1-1/n)^n
+p_jth_in_bs
+```
+
+(e) When n = 100, what is the probability that the jth observation is in the bootstrap sample?
+
+```{r}
+#Calculate the probability that the jth observation is in the bootstrap sample
+n = 100
+p_jth_in_bs <- 1-(1-1/n)^n
+p_jth_in_bs
+```
+
+(f) When n = 10,000, what is the probability that the jth observation is in the bootstrap sample?
+
+```{r}
+#Calculate the probability that the jth observation is in the bootstrap sample
+n = 10000
+p_jth_in_bs <- 1-(1-1/n)^n
+p_jth_in_bs
+```
+
+(g) Create a plot that displays, for each integer value of n from 1 to 100,000, the probability that the jth observation is in the bootstrap sample.  Comment on what you observe.
+
+```{r}
+n <- 1:100000
+plot(n, 1 - (1 - 1/n)^n)
+```
+
+Clearly the probability that the jth observation is in the bootstrap sample converges quickly to a value of about 0.633 as n increases.
+
+We can also look at the limit of $$(1 - \frac{1}{n})^n$$ as n goes to infinity.  This limit goes to $$\frac{1}{e}$$ which equals about 0.367.  Then 1 - 0.367 equals about 0.633 which is the asymtote we see in our plot above.
+
+(h) We will now investigate numerically the probability that a bootstrap sample of size n = 100 contains the jth observation.  Here j = 4. We repeatedly create bootstrap samples, and each time we record whether or not the fourth observation is contained in the bootstrap sample.  Comment on the results obtained.
+
+```{r}
+store <- rep(NA, 10000)
+for (i in 1:10000) {
+    store[i] <- sum(sample(1:100, rep = TRUE) == 4) > 0
+}
+mean(store)
+```
+
+The bootstrap provides us a very similar numerical value for the probability that the bootstrap sample contains the jth observation (about 0.63 depending on the result of the random sample of 100 values).  This is a nice check to the analytical result derived from the laws of probability and pure logic.
+
+\pagebreak
+
+Applied Question 5.
+
+In Chapter 4, we used logistic regression to predict the probability of default using income and balance on the Default data set.  We will now estimate the test error of this logistic regression model using the validation set approach.  Do not forget to set a random seed before beginning your analysis.
+
+(a) Fit a logistic regression model that uses income and balance to predict default.
+
+```{r, message=FALSE}
+#set a seed so that results can be duplicated
+set.seed(1)
+
+#Attach the Default data set for ease of use
+attach(Default)
+
+#Take a quick look at what is in Default as a reminder
+head(Default)
+
+#use the glm function in R to perform logistic regression
+Default_LR <- glm(default ~ income + balance, data = Default, 
+                family = "binomial")
+summary(Default_LR)
+```
+
+(b) Using the validation set approach, estimate the test error of this model.  In order to do this, you must perform the following steps:
+
+i. Split the sample set into a training set and a validation set.
+
+```{r}
+#Split the Default data set into a training and validation (test) set.
+n     <- nrow(Default)
+train <- sample(1:n, n/2)
+```
+
+ii. Fit a multiple logistic regression model using only the training observations.
+
+```{r}
+#use the glm function in R to perform multiple logistic regression
+#using the training observations
+Default_LR_train <- glm(default ~ income + balance, data = Default,
+                    subset = train,    
+                    family = "binomial")
+summary(Default_LR_train)
+```
+
+iii. Obtain a prediction of default status for each individual in the validation set by computing the posterior probability of default for that individual, and classifying the individual to the default category if the posterior probability is greater than 0.5.
+
+```{r}
+#Calculate the probabilities for defaulting
+Default_probabilities = predict(Default_LR_train, newdata = Default[-train, ], type = "response")
+
+#Take a look at the first 10 predictions using or logistic regression model
+Default_probabilities %>% head(10)
+
+#Set a prediction cutoff value.  For this problem let's use 0.5
+cutoff = 0.5
+
+#Create a data frame of predictions from our logistic regression model using a cutoff of 0.5
+Default_predictions = ifelse(Default_probabilities > cutoff, "Yes", "No")
+
+#Take a look at our first 10 predictions to make sure it is consistent with our probabilities
+Default_predictions %>% head(10)
+
+#How many "default" predictions did we make total
+sum(Default_predictions == "Yes")
+```
+
+iv. Compute the validation set error, which is the fraction of the observations in the validation set that are misclassified.
+
+```{r}
+#Create a confusion matrix
+confusion_matrix = table(truth = Default[-train,]$default, pred = Default_predictions)
+addmargins(confusion_matrix)
+
+#Calulate the validation set error
+1 - (sum(diag(confusion_matrix)) / sum(confusion_matrix))
+```
+
+(c) Repeat the process in (b) three times, using three different splits of the observations into a training set and a validation set.  Comment on the results obtained.
+
+```{r}
+#Repeat the process in (b)
+#First Time using code from part (b)
+
+train <- sample(1:n, n/2)
+Default_LR_train <- glm(default ~ income + balance, data = Default,
+                    subset = train,    
+                    family = "binomial")
+Default_probabilities = predict(Default_LR_train, newdata = Default[-train, ], type = "response")
+Default_predictions = ifelse(Default_probabilities > cutoff, "Yes", "No")
+confusion_matrix = table(truth = Default[-train,]$default, pred = Default_predictions)
+addmargins(confusion_matrix)
+1 - (sum(diag(confusion_matrix)) / sum(confusion_matrix))
+
+#Second Time
+
+train <- sample(1:n, n/2)
+Default_LR_train <- glm(default ~ income + balance, data = Default,
+                    subset = train,    
+                    family = "binomial")
+Default_probabilities = predict(Default_LR_train, newdata = Default[-train, ], type = "response")
+Default_predictions = ifelse(Default_probabilities > cutoff, "Yes", "No")
+confusion_matrix = table(truth = Default[-train,]$default, pred = Default_predictions)
+addmargins(confusion_matrix)
+1 - (sum(diag(confusion_matrix)) / sum(confusion_matrix))
+
+#Third Time
+
+train <- sample(1:n, n/2)
+Default_LR_train <- glm(default ~ income + balance, data = Default,
+                    subset = train,    
+                    family = "binomial")
+Default_probabilities = predict(Default_LR_train, newdata = Default[-train, ], type = "response")
+Default_predictions = ifelse(Default_probabilities > cutoff, "Yes", "No")
+confusion_matrix = table(truth = Default[-train,]$default, pred = Default_predictions)
+addmargins(confusion_matrix)
+1 - (sum(diag(confusion_matrix)) / sum(confusion_matrix))
+
+```
+
+We see some small variation in the validation set errors between the repeated model fits with different validation training sets.  This is due to the fact that each time we fit the model we are using a slightly different training set since the training set is created by random sampling half of the Default data set.  Since different training sets are used the model is slightly different each time it is fit.  The subsequent validation set is also slightly different between fits.  These differences lead to minor variations we observe in the validation set error.
+
+(d) Now consider a logistic regression model that predicts the probability of default using income, balance, and a dummy variable for student.  Estimate the test error for this model using the validation set approach.  Comment on whether or not including a dummy variable for student leads to a reduction in test error rate.
+
+```{r}
+#Use code from previous parts to complete part (d)
+train <- sample(1:n, n/2)
+Default_LR_train <- glm(default ~ income + balance + student, data = Default,
+                    subset = train,    
+                    family = "binomial")
+summary(Default_LR_train)
+Default_probabilities = predict(Default_LR_train, newdata = Default[-train, ], type = "response")
+Default_predictions = ifelse(Default_probabilities > cutoff, "Yes", "No")
+confusion_matrix = table(truth = Default[-train,]$default, pred = Default_predictions)
+addmargins(confusion_matrix)
+1 - (sum(diag(confusion_matrix)) / sum(confusion_matrix))
+```
+
+The addition of the student dummy variable to the model does not appear to reduce the test error rate.
+
+\pagebreak
+
+Applied Question 6.
+
+We continue to consider the use of a logistic regression model to predict the probability of default using income and balance on the Default data set.  In particular, we will now compute estimates for the standard errors of the income and balance logistic regression coefficients in two different ways: (1) using the bootstrap, and (2) using the standard formula for computing the standard errors in the glm() function.  Do not forget to set a random seed before beginning your analysis.
+
+(a) Using the summary() and glm() functions, determine the estmated standard errors for the coefficients associated with income and balance in a multiple logistic regression model that uses both predictors.
+
+```{r}
+#set a seed so that results can be duplicated
+set.seed(2)
+
+#use the glm() function in R to perform logistic regression
+Default_LR <- glm(default ~ income + balance, data = Default, 
+                family = "binomial")
+
+#use the summary() function to determine the standard error of the coefficients
+summary(Default_LR)
+
+#use the summary() function to just show the standard errors of the coefficients
+summary(Default_LR)$coefficients[2:3, 2]
+```
+
+(b) Wrate a function, boot.fn(), that takes as input the Default data set as well as an index of the observations, and that outputs the coefficient estimates for income and balance in the multiple logistic regression model.
+
+```{r}
+#Create a boot.fn()
+boot.fn <- function(data, index) {
+  fn_glm <- glm(default ~ income + balance, data = data,
+                subset = index,
+                family = "binomial")
+  return (coef(fn_glm))
+}
+boot.fn(Default, 1:n)
+```
+
+(c) Use boot() function together with your boot.fn() function to estimate the standard errors of the logistic regression coefficients for income and balance.
+
+```{r}
+#Using the boot() function estimate the standard errors of the coefficients
+#for income and balance
+boot(Default, boot.fn, R = 1000)
+```
+
+(d) Comment on the estimated standard errors obtained using the glm() function and using your bootstrap function.
+
+The standard errors for coefficients obtained from the glm() function and the bootstrap function are very close.  The fact that the standard errors a very close gives us confidence in the assumptions and fit of our logistic regression model that we applied to the Default data.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

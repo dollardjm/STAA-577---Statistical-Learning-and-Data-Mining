@@ -1,0 +1,651 @@
+---
+title: "STAA 577 Assignment 3"
+author: "Jon Dollard"
+date: "9/12/2020"
+output: pdf_document
+---
+
+```{r setup, message = FALSE, warning = FALSE}
+options(warnPartialMatchArgs = FALSE)  # don't want these warnings
+library(magrittr)     # pipes
+library(tibble)       # tibbles
+library(dplyr)        # data wrangling
+library(boot)         # for `cv.glm`
+library(purrr)        # iteration
+library(ggplot2)      # tidy plotting
+library(ISLR)         # Hitters data set
+library(leaps)        # step-wise model selection
+library(gridExtra)    # arranging ggplots into grids
+library(glmnet)       # Ridge regression, lasso and elastic net
+```
+
+Question One:
+
+Text:  Exercise 6.8, Conceptual Question #6.
+
+We will now explore (6.12) and (6.13) further.
+
+(a) Consider (6.12) with p = 1.  For some choice of $y_1$ and $\lambda$ > 0, plot (6.12) as a function of $\beta_1$.  Your plot should confirm that (6.12) is solved by (6.14).
+
+```{r}
+#Define a variable for p
+p <- 1
+
+#Define values for y1 and lambda
+y1 <- 21
+lambda <- 13
+
+#Create a variable for Beta1 and assign a range of values for plotting
+Beta1 <- seq(-20, 20, 0.5)
+
+#Create a variable for equation 6.12
+Ridge_Eqn_6_12 <- (y1 - Beta1)^2 + (lambda*(Beta1^2))
+
+#Create a data frame with Beta1 and Ridge_Eqn_6_12 for use with ggplot2
+Ridge_DF <- data.frame(Beta1, Ridge_Eqn_6_12)
+
+#Calculate the Beta1 estimate, equation 6.14 from the text
+Beta1_est_Eqn_6_14 <- y1/(1+lambda)
+Ridge_Eqn_6_12_est <- (y1 - Beta1_est_Eqn_6_14)^2 + (lambda*(Beta1_est_Eqn_6_14^2))
+
+#Plot the Ridge Regression equation vs. the values of Beta and the estimated beta
+
+ggplot(data = Ridge_DF, aes(x = Beta1, y = Ridge_Eqn_6_12)) +
+  geom_point() +
+  geom_point(aes(x = Beta1_est_Eqn_6_14, y = Ridge_Eqn_6_12_est), color = "green", size = 5)
+
+```
+
+Clearly from the plot we can confirm that equation 6.12 is solved by 6.14.
+
+(b) Consider (6.13) with p = 1. For some choice of $y_1$ and $\lambda$ > 0, plot (6.13) as a function of $\beta_1$.  Your plot should confirm that (6.13) is solved by (6.15).
+
+```{r}
+#Define a variable for p
+p <- 1
+
+#Define values for y1 and lambda
+y1 <- 21
+lambda <- 13
+
+#Create a variable for Beta1 and assign a range of values for plotting
+Beta1 <- seq(-20, 20, 0.5)
+
+#Create a variable for equation 6.13
+Lasso_Eqn_6_13 <- (y1 - Beta1)^2 + (lambda*abs(Beta1))
+
+#Create a data frame with Beta1 and Lasso_Eqn_6_13 for use with ggplot2
+Lasso_DF <- data.frame(Beta1, Lasso_Eqn_6_13)
+
+#Calculate the Beta1 estimate, equation 6.15 from the text.
+#Note due to the choice of y1 and lambda we see that y1 > lambda/2
+Beta1_est_Eqn_6_15 <- y1-(lambda/2)
+Lasso_Eqn_6_13_est <- (y1 - Beta1_est_Eqn_6_15)^2 + (lambda*abs(Beta1_est_Eqn_6_15))
+
+#Plot the Lasso equation vs. the values of Beta and the estimated beta
+
+ggplot(data = Ridge_DF, aes(x = Beta1, y = Ridge_Eqn_6_12)) +
+  geom_point() +
+  geom_point(aes(x = Beta1_est_Eqn_6_14, y = Ridge_Eqn_6_12_est), color = "red", size = 5)
+
+```
+
+We can see clearly from the plot that we can confirm that equation 6.13 is solved by 6.15 for the choice of y and lambda.
+
+\pagebreak
+
+Questions Three:
+
+Text:  Exercises 6.8, Applied Question #8
+
+In this exercise, we will generate simulated data, and will then use this data to perform best subset selection.
+
+(a) Use the rnorm() function to generate a predictor X of length n = 100, as well as a noice vector $\epsilon$ of length n = 100.
+
+```{r}
+#use rnorm() to generate a set of values for a predictor X, set a seed so results can 
+#be reproduced
+set.seed(1)
+n = 100
+X <- rnorm(n)
+
+#use rnorm() to generate a set of values for noise, simulated random error
+epsilon <- rnorm(n)
+```
+
+(b) Generate a response vector Y of length n = 100 according to the model
+
+\center $Y = \beta_0 + \beta_1X + \beta_2X^2 + \beta_3X^3 + \epsilon$,
+
+where $\beta_0, \beta_1, \beta_2, and \beta_3$ are constants of your choice.
+
+```{r}
+#Set beta coefficients
+Beta_0 <- 2
+Beta_1 <- 4
+Beta_2 <- -4
+Beta_3 <- 6
+
+#Create the vector Y based on the model
+Y = Beta_0 + Beta_1*X + Beta_2*X^2 + Beta_3*X^3 + epsilon
+
+#Sanity check of the length of Y
+length(Y)
+
+```
+
+(c) Use the regsubsets() function to perform best subset selection in order to choose the best model containing the predictors X, $X^2$,...,$X^{10}$.  What is the best model obtained according to $C_p$, BIC, and adjusted $R^2$?  Show some plots to provide evidence for your answer, and report the coefficients of the best model obtained.  Note you will need to use the data.frame() function to create a single data set containing both X and Y.
+
+```{r}
+#Create the data frame of predictors and Y
+X_1 <- X
+X_2 <- X^2
+X_3 <- X^3
+X_4 <- X^4
+X_5 <- X^5
+X_6 <- X^6
+X_7 <- X^7
+X_8 <- X^8
+X_9 <- X^9
+X_10 <- X^10
+Y <- Y
+Best_Subsets_DF <- data.frame(X_1, X_2, X_3, X_4, X_5, X_6, X_7, X_8, X_9, X_10, Y)
+
+#Sanity check the dimensions of the data frame
+dim(Best_Subsets_DF)
+
+#Use regsubsets() to to perform best subset selection
+Best_Subsets_Reg <- leaps::regsubsets(Y ~ ., data = Best_Subsets_DF, nvmax = 10)
+Best_Subsets_Reg_Summary <- summary(Best_Subsets_Reg)
+Best_Subsets_Reg_Summary
+
+
+#Use code that was kindly provided in Lab 06 and modified slightly as needed.
+
+# View the model performance metrics for each size model
+# Note: tibble() allows for non-standard characters as headers (e.g. '-' or spaces)
+tibble::tibble(
+  RSS = Best_Subsets_Reg_Summary$rss,
+  `R-squared` = Best_Subsets_Reg_Summary$rsq,
+  `Adj_R-squared` = Best_Subsets_Reg_Summary$adjr2,
+  CP = Best_Subsets_Reg_Summary$cp,
+  BIC = Best_Subsets_Reg_Summary$bic
+)
+
+# RSS
+p_rss <- ggplot2::qplot(seq_along(Best_Subsets_Reg_Summary$rss), Best_Subsets_Reg_Summary$rss,
+      xlab = "Number of Variables", ylab = "RSS") +
+      geom_line() +
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+# Adjusted R^2
+pt_adjr2 <- which.max(Best_Subsets_Reg_Summary$adjr2)   # index of max feature
+p_adjr2  <- ggplot2::qplot(seq_along(Best_Subsets_Reg_Summary$adjr2), Best_Subsets_Reg_Summary$adjr2,
+                  xlab = "Number of Variables", ylab = "Adjusted RSq") +
+                  geom_line() +
+                  geom_point(aes(x = pt_adjr2, y = Best_Subsets_Reg_Summary$adjr2[pt_adjr2]),
+                  colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+# CP
+pt_cp <- which.min(Best_Subsets_Reg_Summary$cp)   # index of min feature
+p_cp  <- ggplot2::qplot(seq_along(Best_Subsets_Reg_Summary$cp), Best_Subsets_Reg_Summary$cp,
+               xlab = "Number of Variables", ylab = "Cp") +
+               geom_line() +
+               geom_point(aes(x = pt_cp, y = Best_Subsets_Reg_Summary$cp[pt_cp]),
+               colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+pt_bic <- which.min(Best_Subsets_Reg_Summary$bic)
+p_bic  <- ggplot2::qplot(seq_along(Best_Subsets_Reg_Summary$bic), Best_Subsets_Reg_Summary$bic,
+                xlab = "Number of Variables", ylab = "BIC") +
+                geom_line() +
+                geom_point(aes(x = pt_bic, y = Best_Subsets_Reg_Summary$bic[pt_bic]),
+                colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+# All 4 plots stored in variable `reg_plots`
+# Plot in a grid
+gridExtra::grid.arrange(p_rss,
+                        p_adjr2,
+                        p_cp,
+                        p_bic, ncol = 2)
+
+
+
+```
+
+Based on the table and plots we can see that adjusted $R^2$ and $C_p$ both suggest a model of 4 predictors.  BIC suggests the best model has 3 predictors.  In this case I would recommend the model with 3 predictors favoring the potential for improved model interpretability since, generally speaking, a model with fewer predictors would be easier to interpret in the context of the application.
+
+Therefore the coefficients for a model with 3 predictors are:
+
+```{r}
+#Show the coefficients for a 3 predictor model
+coef(Best_Subsets_Reg, 3)
+```
+
+(d) Repeat (c), using forward stepwise selection and also using backwards stepwise selection.  How does your answer compare to the results in (c)?
+
+```{r}
+#Using the code provided in Lab06 with slight modifications
+
+#First look at forward stepwise selection
+regfit_fwd <- leaps::regsubsets(Y ~ ., data = Best_Subsets_DF,
+                                nvmax = 10, method = "forward")
+regfit_fwd_summary <- summary(regfit_fwd)
+
+regfit_fwd_summary
+
+tibble::tibble(
+  RSS = regfit_fwd_summary$rss,
+  `R-squared` = regfit_fwd_summary$rsq,
+  `Adj_R-squared` = regfit_fwd_summary$adjr2,
+  CP = regfit_fwd_summary$cp,
+  BIC = regfit_fwd_summary$bic
+)
+
+# RSS
+p_rss <- ggplot2::qplot(seq_along(regfit_fwd_summary$rss), regfit_fwd_summary$rss,
+      xlab = "Number of Variables", ylab = "RSS") +
+  geom_line()+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+# Adjusted R^2
+pt_adjr2 <- which.max(regfit_fwd_summary$adjr2)   # index of max feature
+p_adjr2  <- ggplot2::qplot(seq_along(regfit_fwd_summary$adjr2), regfit_fwd_summary$adjr2,
+                  xlab = "Number of Variables", ylab = "Adjusted RSq") +
+  geom_line() +
+  geom_point(aes(x = pt_adjr2, y = regfit_fwd_summary$adjr2[pt_adjr2]),
+             colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+# CP
+pt_cp <- which.min(regfit_fwd_summary$cp)   # index of min feature
+p_cp  <- ggplot2::qplot(seq_along(regfit_fwd_summary$cp), regfit_fwd_summary$cp,
+               xlab = "Number of Variables", ylab = "Cp") +
+  geom_line() +
+  geom_point(aes(x = pt_cp, y = regfit_fwd_summary$cp[pt_cp]),
+             colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+pt_bic <- which.min(regfit_fwd_summary$bic)
+p_bic  <- ggplot2::qplot(seq_along(regfit_fwd_summary$bic), regfit_fwd_summary$bic,
+                xlab = "Number of Variables", ylab = "BIC") +
+  geom_line() +
+  geom_point(aes(x = pt_bic, y = regfit_fwd_summary$bic[pt_bic]),
+             colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+# All 4 plots stored in variable `reg_plots`
+# Plot in a grid
+gridExtra::grid.arrange(p_rss,
+                        p_adjr2,
+                        p_cp,
+                        p_bic, ncol = 2)
+```
+
+```{r}
+#Next look at backward stepwise selection
+regfit_bwd <- leaps::regsubsets(Y ~ ., data = Best_Subsets_DF,
+                                nvmax = 10, method = "backward")
+
+regfit_bwd_summary <- summary(regfit_bwd)
+
+regfit_bwd_summary
+
+tibble::tibble(
+  RSS = regfit_bwd_summary$rss,
+  `R-squared` = regfit_bwd_summary$rsq,
+  `Adj_R-squared` = regfit_bwd_summary$adjr2,
+  CP = regfit_bwd_summary$cp,
+  BIC = regfit_bwd_summary$bic
+)
+
+# RSS
+p_rss <- ggplot2::qplot(seq_along(regfit_bwd_summary$rss), regfit_bwd_summary$rss,
+      xlab = "Number of Variables", ylab = "RSS") +
+      geom_line()+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+# Adjusted R^2
+pt_adjr2 <- which.max(regfit_bwd_summary$adjr2)   # index of max feature
+p_adjr2  <- ggplot2::qplot(seq_along(regfit_bwd_summary$adjr2), regfit_bwd_summary$adjr2,
+                  xlab = "Number of Variables", ylab = "Adjusted RSq") +
+                  geom_line() +
+                  geom_point(aes(x = pt_adjr2, y = regfit_bwd_summary$adjr2[pt_adjr2]),
+                  colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+# CP
+pt_cp <- which.min(regfit_bwd_summary$cp)   # index of min feature
+p_cp  <- ggplot2::qplot(seq_along(regfit_bwd_summary$cp), regfit_bwd_summary$cp,
+               xlab = "Number of Variables", ylab = "Cp") +
+               geom_line() +
+               geom_point(aes(x = pt_cp, y = regfit_bwd_summary$cp[pt_cp]),
+               colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+pt_bic <- which.min(regfit_bwd_summary$bic)
+p_bic  <- ggplot2::qplot(seq_along(regfit_bwd_summary$bic), regfit_bwd_summary$bic,
+                xlab = "Number of Variables", ylab = "BIC") +
+                geom_line() +
+                geom_point(aes(x = pt_bic, y = regfit_fwd_summary$bic[pt_bic]),
+                colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+# All 4 plots stored in variable `reg_plots`
+# Plot in a grid
+gridExtra::grid.arrange(p_rss,
+                        p_adjr2,
+                        p_cp,
+                        p_bic, ncol = 2)
+
+```
+
+Looking at both forward and backward stepwise selection we see very similar results.  Both methods suggest 4 predictors using the adjusted $R^2$ and $C_p$ as the criteria and 3 predictors if BIC is used.  This is also very similar to the results we obtained using the best subset selection.  Given these results I would still select a 3 predictor model for interpretability reasons.  We compare the coefficients for each technique below.
+
+```{r}
+coef(Best_Subsets_Reg, 3)
+coef(regfit_fwd, 3)
+coef(regfit_bwd, 3)
+```
+
+(e) Now fit a lasso model to the simulated data, again using X, $X^2$,...,$X^{10}$ as predictors.  Use cross-validation to select the optimal value of $\lambda$.  Create plots of the cross-validation error as a function of $\lambda$. Report the resulting coefficient estimates, and discuss the results obtained.
+
+```{r}
+#Reorganize our predictors and response to complete the lasso model in r
+lasso_data <- model.matrix(Y ~ ., data = Best_Subsets_DF)[,-1]
+
+#Take a quick look at lasso_data for a sanity check
+head(lasso_data)
+
+#Use cv.glmnet() to perform the lasso calcuations and select lambda from CV
+lasso_CV <- cv.glmnet(lasso_data, Y, alpha = 1)
+lasso_CV
+plot(lasso_CV)
+```
+
+The best value for $\lambda$ is 0.06707.
+
+```{r}
+#Now we can look at the coefficients for the best lasso model
+lasso_model <- glmnet(lasso_data, Y, alpha = 1)
+predict(lasso_model, s = lasso_CV$lambda.min, type = "coefficients")
+```
+
+The lasso model results in the choice of 5 predictors.  X1, X2, and X3 appear as the dominant predictors for the model.  X4, X5, and X7 are very small in comparison and while not zero I think can be viewed as negligible and could be considered for removal from the model.  X4, X6, X8, X9 and X10 are essentially forced to zero by the lasso model based on the lambda used.
+
+(f) Now generate a response vector Y according to the model
+
+\center $Y = \beta_0 + \beta_7X^7 + \epsilon$,
+
+and perform best subset selection and the lasso.  Discuss the results obtained.
+
+```{r}
+#Choose our own value for Beta7
+Beta_7 <- 15
+
+#Create a new model for Y for this part of the problem
+Y <- Beta_0 + Beta_7*X^7 + epsilon
+
+#Create a new data frame for this part
+part_f_df <- data.frame(X_1, X_2, X_3, X_4, X_5, X_6, X_7, X_8, X_9, X_10, Y)
+
+#Complete best subset selection
+
+#Use regsubsets() to to perform best subset selection
+Best_Subsets_Reg <- leaps::regsubsets(Y ~ ., data = part_f_df, nvmax = 10)
+Best_Subsets_Reg_Summary <- summary(Best_Subsets_Reg)
+Best_Subsets_Reg_Summary
+
+
+#Use code that was kindly provided in Lab 06 and modified slightly as needed.
+
+# View the model performance metrics for each size model
+# Note: tibble() allows for non-standard characters as headers (e.g. '-' or spaces)
+tibble::tibble(
+  RSS = Best_Subsets_Reg_Summary$rss,
+  `R-squared` = Best_Subsets_Reg_Summary$rsq,
+  `Adj_R-squared` = Best_Subsets_Reg_Summary$adjr2,
+  CP = Best_Subsets_Reg_Summary$cp,
+  BIC = Best_Subsets_Reg_Summary$bic
+)
+
+# RSS
+p_rss <- ggplot2::qplot(seq_along(Best_Subsets_Reg_Summary$rss), Best_Subsets_Reg_Summary$rss,
+      xlab = "Number of Variables", ylab = "RSS") +
+      geom_line()+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+# Adjusted R^2
+pt_adjr2 <- which.max(Best_Subsets_Reg_Summary$adjr2)   # index of max feature
+p_adjr2  <- ggplot2::qplot(seq_along(Best_Subsets_Reg_Summary$adjr2), Best_Subsets_Reg_Summary$adjr2,
+                  xlab = "Number of Variables", ylab = "Adjusted RSq") +
+                  geom_line() +
+                  geom_point(aes(x = pt_adjr2, y = Best_Subsets_Reg_Summary$adjr2[pt_adjr2]),
+                  colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+# CP
+pt_cp <- which.min(Best_Subsets_Reg_Summary$cp)   # index of min feature
+p_cp  <- ggplot2::qplot(seq_along(Best_Subsets_Reg_Summary$cp), Best_Subsets_Reg_Summary$cp,
+               xlab = "Number of Variables", ylab = "Cp") +
+               geom_line() +
+               geom_point(aes(x = pt_cp, y = Best_Subsets_Reg_Summary$cp[pt_cp]),
+               colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+pt_bic <- which.min(Best_Subsets_Reg_Summary$bic)
+p_bic  <- ggplot2::qplot(seq_along(Best_Subsets_Reg_Summary$bic), Best_Subsets_Reg_Summary$bic,
+                xlab = "Number of Variables", ylab = "BIC") +
+                geom_line() +
+                geom_point(aes(x = pt_bic, y = Best_Subsets_Reg_Summary$bic[pt_bic]),
+                colour = "red", size = 3)+
+      scale_x_continuous(breaks = c(0,2,4,6,8,10))
+
+# All 4 plots stored in variable `reg_plots`
+# Plot in a grid
+gridExtra::grid.arrange(p_rss,
+                        p_adjr2,
+                        p_cp,
+                        p_bic, ncol = 2)
+
+```
+
+For this model we see the RSS decreasing monotonically as we would expect.  Adjusted $R^2$ suggests a 4 predictor model.  $C_p$ suggests a 2 predictor model and BIC suggests a 1 predictor model.  Since it isn't clear the context of the goals with this model I am not sure that I can say which model we would choose.  Therefore, we will show the coefficients for each size model below.
+
+```{r}
+#Show the coefficients for a 1 predictor model
+coef(Best_Subsets_Reg, 1)
+
+#Show the coefficients for a 2 predictor model
+coef(Best_Subsets_Reg, 2)
+
+#Show the coefficients for a 4 predictor model
+coef(Best_Subsets_Reg, 4)
+```
+
+```{r}
+#Use the lasso for choosing the best model
+
+#Reorganize our predictors and response to complete the lasso model in r
+lasso_data <- model.matrix(Y ~ ., data = part_f_df)[,-1]
+
+#Take a quick look at lasso_data for a sanity check
+head(lasso_data)
+
+#Use cv.glmnet() to perform the lasso calcuations and select lambda from CV
+lasso_CV <- cv.glmnet(lasso_data, Y, alpha = 1)
+lasso_CV
+plot(lasso_CV)
+
+```
+
+The best value for $\lambda$ is 26.50.
+
+```{r}
+#Now we can look at the coefficients for the best lasso model
+lasso_model <- glmnet(lasso_data, Y, alpha = 1)
+predict(lasso_model, s = lasso_CV$lambda.min, type = "coefficients")
+```
+
+The lasso method produces a 1 predictor model.  The predictor coefficient between best subset and the lasso for a one predictor model are very similar.  The intercepts the model produces are somewhat close in value.
+
+\pagebreak
+
+Question Four:
+
+Text:  Exercises 6.8, Applied Question #9 (a) - (d)
+
+In this exercise, we will predict the number of applications received using the other variables in the College data set.
+
+(a) Split the data set into a training set and a test set.
+
+```{r, message=FALSE}
+#Let's first explore the College data set a bit.
+attach(College)
+
+#Use head to get a look at what is in the College data set
+head(College)
+
+#Whate are the dimensions of the college data set
+dim(College)
+
+#Check the data set for missing values
+sum(is.na(College))
+#No missing values, that's nice!
+
+#Now that we have a feel for what is in the College data set let's split
+#it into a training and test set.
+set.seed(1)
+n     <- nrow(College)
+train <- sample(1:n, n/2)
+College_train <- College[train,]
+College_test <- College[-train,]
+dim(College_train)
+dim(College_test)
+```
+
+(b) Fit a linear model using least squares on the training set, and report the test error obtained.
+
+```{r}
+#Fit the linear model using the training set
+college_lm_reg <- lm(Apps ~ ., data = College_train)
+
+#Take a look at the summary from the model
+summary(college_lm_reg)
+
+#Use the test set to determine the test error
+predict_college <- predict(college_lm_reg, College_test)
+mean((predict_college - College_test$Apps)^2)
+```
+
+The mean squared error (test error) is 1.136 x $10^6$.
+
+(c) Fit a ridge regression model on the training set, with $\lambda$ chosen by cross-validation.  Report the test error obtained.
+
+```{r}
+#Split up the predictors from the response
+#remove the Apps response column from College
+rr_predictors <- model.matrix(Apps ~ ., College)[, -1]   
+head(rr_predictors)
+
+#Create a response variable that just contains Apps
+rr_response <- College$Apps 
+summary(rr_response)
+
+# Create training and test sets for CV
+set.seed(1)
+n <- nrow(rr_predictors)            
+rr_train  <- sample(1:n, n/2)   
+rr_test   <- -rr_train             
+rr_response_test <- rr_response[rr_test]
+
+#Use cv.glmnet to select the best value for lambda
+ridge_cv <- cv.glmnet(rr_predictors[rr_train, ],  # subset training `predictor matrix`
+                      rr_response[rr_train],      # subset training `response vector`
+                      alpha = 0)                  # ridge on training set
+plot(ridge_cv)
+
+#Best lambda from the cross validation
+ridge_cv$lambda.min
+
+#Now that we have determined the best lambda chosen by cross validation we are 
+#ready to fit the ridge regression model and determine the error.
+grid <- 10^seq(10, -2, length = 100)
+
+rr_model <- glmnet(rr_predictors[rr_train, ], rr_response[rr_train],  
+                   alpha  = 0,            
+                   lambda = grid,         
+                   thresh = 1e-12)
+
+ridge_pred <- predict(rr_model,            
+                      s = ridge_cv$lambda.min,                   
+                      newx = rr_predictors[rr_test, ])        
+
+#Determine the model error (MSE)
+mean((ridge_pred - rr_response_test)^2)                  
+```
+
+The mean squared error (test error) is 9.766 x $10^5$.
+
+(d) Fit a lasso model on the training set, with $\lambda$ chosen by cross-validation.  Report the test error obtained, along with the number of non-zero coefficient estimates.
+
+```{r}
+#Find the best lambda value using cross validation
+lasso_cv <- cv.glmnet(rr_predictors[rr_train, ],  # subset training `predictor matrix`
+                      rr_response[rr_train],      # subset training `response vector`
+                      alpha = 1)                  # lasso on training set
+plot(lasso_cv)
+
+
+lasso_cv$lambda.min
+
+#Now fit the lasso model and determine the error
+lasso_model <- glmnet(rr_predictors[rr_train, ],      # subset training `predictor matrix`
+                      rr_response[rr_train],          # subset training `response vector`
+                      alpha = 1,                      # now alpha = 1; lasso
+                      lambda = grid,
+                      thresh = 1e-12)                  
+
+plot(lasso_model)
+
+lasso_pred <- predict(lasso_model,            
+                      s = lasso_cv$lambda.min,                   
+                      newx = rr_predictors[rr_test, ])        
+
+#Determine the model error (MSE)
+mean((lasso_pred - rr_response_test)^2)  
+
+
+```
+
+We see a test error from the lasso model of 1.119 x $10^6$.
+
+Next we will determine the number of non zero coefficients and their values.
+
+```{r}
+predict(lasso_model, s = lasso_cv$lambda.min, type = "coefficients")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

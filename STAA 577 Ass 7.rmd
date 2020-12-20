@@ -1,0 +1,475 @@
+---
+title: "STAA 577 Assignment 7"
+author: "Jon Dollard"
+date: "10/7/2020"
+output: pdf_document
+---
+
+```{r setup, message = FALSE, warning = FALSE}
+options(warnPartialMatchArgs = FALSE)  # don't want these warnings
+library(magrittr)     # pipes
+library(tibble)       # tibbles
+library(dplyr)        # data wrangling
+library(ggplot2)      # tidy plotting
+library(gridExtra)    # for plotting ggplots as a grid
+```
+
+Unsupervised Learning
+
+Question One:
+
+Text: Exercises 10.7, Conceptual Question #3
+
+In this problem, you will perform K-means clustering manually, with K = 2, on a small example with n = 6 observations and p = 2 features.
+
+(a) Plot the observations.
+
+```{r}
+#Create a data frame of the observations
+Obs <- data.frame(X1 = c(1,1,0,5,6,4), X2 = c(4,3,4,1,2,0)) 
+ggplot() +
+  geom_point(data = Obs, aes(x = X1, y = X2), size = 4) +
+  labs(x = "X1", y = "X2")
+Obs
+```
+
+(b) Randomly assign a cluster label to each observation.  You can use the sample() command in R to do this.  Report the cluster labels for each observation.
+
+```{r}
+#set the value for K
+K = 2
+set.seed(1)
+cluster_labels <- sample(c(1,2),6, replace = TRUE)
+cluster_labels
+```
+
+(c) Compute the centroid for each cluster.
+
+```{r}
+#Compute the centroids
+centroid_C1_X1vals = NA
+centroid_C1_X2vals = NA
+centroid_C2_X1vals = NA
+centroid_C2_X2vals = NA
+for (i in 1:6){
+  if (cluster_labels[i] == 1){
+    centroid_C1_X1vals[i] = Obs$X1[i]
+    centroid_C1_X2vals[i] = Obs$X2[i]
+  }
+  else {
+    centroid_C2_X1vals[i] = Obs$X1[i]
+    centroid_C2_X2vals[i] = Obs$X2[i]
+  }
+}
+centroid_C1_X1vals <- centroid_C1_X1vals[!is.na(centroid_C1_X1vals)]
+centroid_C1_X2vals <- centroid_C1_X2vals[!is.na(centroid_C1_X2vals)]
+centroid_C2_X1vals <- centroid_C2_X1vals[!is.na(centroid_C2_X1vals)]
+centroid_C2_X2vals <- centroid_C2_X2vals[!is.na(centroid_C2_X2vals)]
+
+centroid_C1_X1vals
+centroid_C1_X2vals
+centroid_C2_X1vals
+centroid_C2_X2vals
+
+centroid_C1 <- c(mean(centroid_C1_X1vals), mean(centroid_C1_X2vals))
+centroid_C2 <- c(mean(centroid_C2_X1vals), mean(centroid_C2_X2vals))
+
+centroid_C1
+centroid_C2
+
+
+
+
+```
+
+(d) Assign each observation to the centroid to which it is closest, in terms of Euclidean distance.  Report the cluster labels for each observation.
+
+```{r}
+euclid_d_1 <- NA
+euclid_d_2 <- NA
+for (i in 1:6){
+  euclid_d_1[i] <- sqrt((Obs$X1[i] - centroid_C1[1])^2 + (Obs$X2[i] - centroid_C1[2])^2)
+  euclid_d_2[i] <- sqrt((Obs$X1[i] - centroid_C2[1])^2 + (Obs$X2[i] - centroid_C2[2])^2)
+  if (euclid_d_1[i] < euclid_d_2[i]){
+    cluster_labels[i] = 1
+  }
+  else {
+    cluster_labels[i] = 2
+  }
+}
+cluster_labels
+```
+
+(e) Repeat (c) and (d) until the answers obtained stop changing.
+
+```{r}
+#Re-compute the centroids
+centroid_C1_X1vals = NA
+centroid_C1_X2vals = NA
+centroid_C2_X1vals = NA
+centroid_C2_X2vals = NA
+for (i in 1:6){
+  if (cluster_labels[i] == 1){
+    centroid_C1_X1vals[i] = Obs$X1[i]
+    centroid_C1_X2vals[i] = Obs$X2[i]
+  }
+  else {
+    centroid_C2_X1vals[i] = Obs$X1[i]
+    centroid_C2_X2vals[i] = Obs$X2[i]
+  }
+}
+centroid_C1_X1vals <- centroid_C1_X1vals[!is.na(centroid_C1_X1vals)]
+centroid_C1_X2vals <- centroid_C1_X2vals[!is.na(centroid_C1_X2vals)]
+centroid_C2_X1vals <- centroid_C2_X1vals[!is.na(centroid_C2_X1vals)]
+centroid_C2_X2vals <- centroid_C2_X2vals[!is.na(centroid_C2_X2vals)]
+
+centroid_C1_X1vals
+centroid_C1_X2vals
+centroid_C2_X1vals
+centroid_C2_X2vals
+
+centroid_C1 <- c(mean(centroid_C1_X1vals), mean(centroid_C1_X2vals))
+centroid_C2 <- c(mean(centroid_C2_X1vals), mean(centroid_C2_X2vals))
+
+centroid_C1
+centroid_C2
+
+#Re-compute the euclidean distances and cluster labels
+euclid_d_1 <- NA
+euclid_d_2 <- NA
+for (i in 1:6){
+  euclid_d_1[i] <- sqrt((Obs$X1[i] - centroid_C1[1])^2 + (Obs$X2[i] - centroid_C1[2])^2)
+  euclid_d_2[i] <- sqrt((Obs$X1[i] - centroid_C2[1])^2 + (Obs$X2[i] - centroid_C2[2])^2)
+  if (euclid_d_1[i] < euclid_d_2[i]){
+    cluster_labels[i] = 1
+  }
+  else {
+    cluster_labels[i] = 2
+  }
+}
+cluster_labels
+
+#Looks pretty good, but we can do one more iteration to see if the centroids change
+
+#Re-compute the centroids
+centroid_C1_X1vals = NA
+centroid_C1_X2vals = NA
+centroid_C2_X1vals = NA
+centroid_C2_X2vals = NA
+for (i in 1:6){
+  if (cluster_labels[i] == 1){
+    centroid_C1_X1vals[i] = Obs$X1[i]
+    centroid_C1_X2vals[i] = Obs$X2[i]
+  }
+  else {
+    centroid_C2_X1vals[i] = Obs$X1[i]
+    centroid_C2_X2vals[i] = Obs$X2[i]
+  }
+}
+centroid_C1_X1vals <- centroid_C1_X1vals[!is.na(centroid_C1_X1vals)]
+centroid_C1_X2vals <- centroid_C1_X2vals[!is.na(centroid_C1_X2vals)]
+centroid_C2_X1vals <- centroid_C2_X1vals[!is.na(centroid_C2_X1vals)]
+centroid_C2_X2vals <- centroid_C2_X2vals[!is.na(centroid_C2_X2vals)]
+
+centroid_C1_X1vals
+centroid_C1_X2vals
+centroid_C2_X1vals
+centroid_C2_X2vals
+
+centroid_C1 <- c(mean(centroid_C1_X1vals), mean(centroid_C1_X2vals))
+centroid_C2 <- c(mean(centroid_C2_X1vals), mean(centroid_C2_X2vals))
+
+centroid_C1
+centroid_C2
+
+#Re-compute the euclidean distances and cluster labels
+euclid_d_1 <- NA
+euclid_d_2 <- NA
+for (i in 1:6){
+  euclid_d_1[i] <- sqrt((Obs$X1[i] - centroid_C1[1])^2 + (Obs$X2[i] - centroid_C1[2])^2)
+  euclid_d_2[i] <- sqrt((Obs$X1[i] - centroid_C2[1])^2 + (Obs$X2[i] - centroid_C2[2])^2)
+  if (euclid_d_1[i] < euclid_d_2[i]){
+    cluster_labels[i] = 1
+  }
+  else {
+    cluster_labels[i] = 2
+  }
+}
+cluster_labels
+
+#Same results so we can stop here.  That was pretty quick, but the example was basic 
+#and the clusters very clearly defined.
+```
+
+(f) In your plot from (a), color the observations according to the cluster labels obtained.
+
+```{r}
+Obs <- data.frame(X1 = c(1,1,0,5,6,4), X2 = c(4,3,4,1,2,0), clust = c(1,1,1,2,2,2)) 
+ggplot() +
+  geom_point(data = Obs, aes(x = X1, y = X2, color = clust), size = 5) +
+  labs(x = "X1", y = "X2")
+```
+
+\pagebreak
+
+Question Two:
+
+Text: Exercises 10.7, Conceptual Question #4
+
+Suppose that for a particular data set, we perform hierarchical clustering using single linkage and using complete linkage.  We obtain two dendrograms.
+
+(a) At a certain point on the single linkage dendrogram, the clusters {1,2,3} and {4,5} fuse.  On the complete linkage dendrogram, the clusters {1,2,3} and {4,5} also fuse at a certain point.  Which fusion will occur higher on the tree, or will they fuse at the same height, or is there not enough information to tell?
+
+In this case I don't think we have enough information to tell.  Two options exist potentially.  One case is where the maximal intercluster dissimilarity is different from the minimal intercluster similarity.  In this instance the complete linkage method would fuse higher than the single linkage method since complete linkage selects the largest of the dissimilarities and single linkage the smallest.  The second case could exist where the maximal intercluster dissimilarity and the minimal intercluster dissimilarity are equal to each other.  In this case the clusters would fuse at the same height.
+
+(b) At a certain point on the single linkage dendrogram, the clusters {5} and {6} fuse.  On the complete linkage dendrogram, the clusters {5} and {6} also fuse at a certain point.  Which fusion will occur higher on the tree, or will they fuse at the same height, or is there not enough information to tell?
+
+In this case we know that the fusion will occur at the same height for both types of linkage.  The reason for this is that we we calculate the distance between clusters {5} and {6} the same way regardless of the linkage method (l2 Norm).  So the maximal intercluster dissimilarity and minimal intercluster dissimilarity are equivalent in this case.
+
+\pagebreak
+
+Question Three:
+
+Text: Exercises 10.7, Applied Question #9
+
+Consider the USArrests data.  We will now perform hierarchical clustering on the states.
+
+(a) Using hierarchical clustering with complete linkage and Euclidean distance, cluster the states.
+
+```{r}
+hc_complete <- stats::hclust(dist(USArrests), method = "complete")
+hc_complete
+
+#Take a look at the dendrogram we get
+plot(hc_complete, main = "Complete Linkage", xlab = "", sub = "", cex = 0.9)
+```
+
+(b) Cut the dendrogram at a height that results in three distinct clusters.  Which states belong to which clusters?
+
+```{r}
+three_clust_cut <- cutree(hc_complete, 3)
+three_clust_cut
+```
+
+(c) Hierarchically cluster the states using complete linkage and Euclidean distance, after scaling the variables to have standard deviation one.
+
+```{r}
+# Scale before clustering
+hc_scaled_complete <- USArrests %>%
+                      scale() %>%            # scale -> mean = 0; unit variance
+                      dist() %>%             # calculate distances
+                      stats::hclust(method = "complete")  # perform clustering
+hc_scaled_complete
+
+#Plot the new dendrogram with the scaled data
+plot(hc_scaled_complete, main = "Complete Linkage - Scaled Data", xlab = "", sub = "", cex = 0.9)
+```
+
+(d) What effect does scaling the variables have on the hierarchical clustering obtained?  In your opinion, should the variables be scaled before the inter-observation dissimilarities are computed?  Provide justification for your answer.
+
+```{r}
+apply(USArrests, 2, var)
+USArrests
+```
+
+The effect of scaling is to ensure each variable has equal importance to the clustering algorithm.  This ensures that variables with very high variation don't contribute more to the clustering just by virtue of having high variance.  We see this as the case without scaling between Florida and North Carolina.  Prior to scaling they are clustered together and this is primarily driven by the Assault variable which has very high variance.  However, after scaling these two states are no longer considered similar.  Although, another example where scaling doesn't seem to have an effect on the clustering is with Illinois and New York.  Pre and post scaling we find they are clustered close together and when we look at the actual data we see this is in fact accurate.  In my opinion this data should be scaled for 2 reasons.  One, which I have already mentioned, is the very high variance associated with the Assault variable, which in some cases results in clustering that isn't accurate to the data (Florida and North Caroline for example) and allows one variable to dominate the clustering algorithm.  The other reason is due to different measurement scales.  Murder, Assault, and Rape are all measured on the same scale, however, UrbanPop is not.  For this reason it would be good to scale the data to mean zero and standard deviation 1 to remove the effects that differing measurement scales have on the clustering results.
+
+
+\pagebreak
+
+Question Four:
+
+Text: Exercises 10.7, Applied Question #10
+
+In this problem, you will generate simulated data, and then perform PCA and K-means clustering on the data.
+
+(a) Generate a simulated data set with 20 observations in each of 3 classes (i.e. 60 observations total), and 50 variables.
+
+```{r, warning=FALSE}
+#set seed for reproducibility
+set.seed(1)
+#Create a 60 x 50 matrix for the "data"
+clust_data <- matrix(stats::rnorm(60 * 50), ncol = 50) %>%
+  data.frame() %>%
+  magrittr::set_names(c("F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10",
+                        "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20",
+                        "F21", "F22", "F23", "F24", "F25", "F26", "F27", "F28", "F29", "F30",
+                        "F31", "F32", "F33", "F34", "F35", "F36", "F37", "F38", "F39", "F40",
+                        "F41", "F42", "F43", "F44", "F45", "F46", "F47", "F48", "F49", "F50"))
+  
+  
+loop_samp = 0
+samp_range <- seq(1,2, by = .01)
+#Use a for loop to change the means of all of the variables (F1-F50)
+for(i in 1:50){
+  #sample a value to change the mean by
+    loop_samp[i] <- sample(samp_range, replace = FALSE)
+    #add the value of loop_samp to the first 20 values of each variable
+    for(l in 1:20){
+      clust_data[l,i] <- clust_data[l, i] + loop_samp[i]
+    }
+    #subtract the value of loop_samp to the last 20 values of each variable
+    #leave the middle 20 values unchanged
+    for(k in 41:60){
+      clust_data[k,i] <- clust_data[k,i] - loop_samp[i]
+    }
+}
+#clust_data
+```
+
+(b) Perform PCA on the 60 observations and plot the first two principal component score vectors.  Use a different color to indicate the observations in each of three classes.  If the three classes appear separated in this plot, then continue on to part (c).  If not, then return to part (a) and modify the simulations so that there is a greater separation between the three classes.  Do not continue to part (c) until the three classes show at least some separation in the first two pricipal component score vectors.
+
+```{r}
+pr_out <- stats::prcomp(clust_data, scale = FALSE)
+pr_out$rotation <- -pr_out$rotation
+pr_out$x <- -pr_out$x
+biplot(pr_out, scale = 0)
+
+#Create a matrix of the first 2 score vectors
+PC_2 <- matrix(c(pr_out$x[,1], pr_out$x[,2]), ncol = 2)
+PC_2 <- data.frame(PC_2)
+PC_2
+ggplot(data = PC_2, aes(x = X1, y = X2))+
+  geom_point()
+```
+
+(c) Perform K-means clustering of the observations with K = 3.  How well do the clusters that you obtained in K-means clustering compare to the true class labels?
+
+```{r}
+# K-means with K=3 and 20 random starts
+km_3 <- clust_data %>%
+  stats::kmeans(centers = 3, nstart = 20)
+km_3$cluster
+km_3
+```
+
+K-means clustering with K=3 performs very well on the simulated data.  Since the classes were broken up into the first 20 observations (rows), the next 20 observation, and the final 20 observations we see that with K=3 we are 100% accurate to the class labels.
+
+(d) Perform K-means clustering with K = 2.  Describe your results.
+
+```{r}
+km_2 <- clust_data %>%
+  stats::kmeans(centers = 2, nstart = 20)
+km_2$cluster
+km_2
+```
+
+It's interesting that the first 40 observations were clustered together into one cluster with the exception of 1 data point and the last 20 observations were grouped together in second cluster.
+
+(e) Now perform K-means clustering with K = 4, and describe your results.
+
+```{r}
+km_4 <- clust_data %>%
+  stats::kmeans(centers = 4, nstart = 20)
+km_4$cluster
+km_4
+```
+
+This is also interesting that the first 20 observations were split into 2 separate classes.  However, the next 20 observation in true class 2 were correctly classified as were the final 20 observations in true class 3.
+
+(f) Now perform K-means clustering with K = 3 on the first two pricipal component score vectors, rather than on the raw data.  That is, perform K-means clustering on the 60 x 2 matrix of which the first column is the first principal component score vector, and the second column is the second principal component score vector.  Comment on the results.
+
+```{r}
+#create the principal components matrix
+PC_2 <- matrix(c(pr_out$x[,1], pr_out$x[,2]), ncol = 2)
+#PC_2
+
+km_PC2 <- PC_2 %>%
+  stats::kmeans(centers = 3, nstart = 20)
+km_PC2$cluster
+km_PC2
+```
+
+We see very good performance on the clustering with just the first 2 score vectors.  This is nice to see since one of the goals of PCA is dimension reduction.  We see here, at least for the simulated data, that we can correctly classify the observations into 3 classes using much less information that we orginally started with.  Our original data set had 3,000 observations...the first 2 score vectors 120 yet we still achieve accuracte classification.  Now we must keep in mind that we created simulated data so this conclusion is somewhat contrived.  But the idea of dimension reduction through PCA is very clear in this example.
+
+(e) Using the scale() function, perform K-means clustering with K = 3 on the data after scaling each variable to have standard deviation one.  How do these results compare to those obtained in (b)? Explain.
+
+```{r}
+km_3 <- clust_data %>%
+  scale() %>%
+  stats::kmeans(centers = 3, nstart = 20)
+km_3$cluster
+km_3
+```
+
+We see that after scaling we obtain the same results as we had in part (b).  The correct classifications are made by the K-means algorithm on the scaled as well as unscaled data in this case.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

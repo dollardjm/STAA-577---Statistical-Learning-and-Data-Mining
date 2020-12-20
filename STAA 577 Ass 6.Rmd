@@ -1,0 +1,702 @@
+---
+title: "Assignment 6"
+author: "Jon Dollard"
+date: "10/1/2020"
+output: pdf_document
+---
+
+### Load necessary libraries {-}
+```{r setup, message = FALSE, warning = FALSE}
+options(warnPartialMatchArgs = FALSE)  # don't want these warnings
+library(magrittr)     # pipes
+library(tibble)       # tibbles
+library(dplyr)        # data wrangling
+library(purrr)        # iteration
+library(yardstick)    # classification performance measures
+library(ggplot2)      # tidy plotting
+library(ISLR)         # The `Carseats` data set
+library(e1071)        # package for SVMs (but also naive Bayes)
+library(pROC)         # ROC curves
+library(ggforce)      # geom_circle function
+library(ISLR)
+```
+
+Support Vector Machines
+
+Question One
+
+Text: Exercises 9.7, Conceptual Question #2.
+
+We have seen that in p = 2 dimensions, a linear decision boundary takes the form $\beta_0$ + $\beta_1X_1$ + $\beta_2X_2$ = 0.  We now investigate a non-linear decision boundary.
+
+(a) Sketch the curve
+
+$(1 + X_1)^2$ + $(2 - X_2)^2$ = 4
+
+```{r}
+#Clear the global environment
+rm(list = ls())
+
+#We can recognize the equation in part (a) as the equation of a circle, 
+#centered at (-1, 2) with radius 2.
+
+ggplot() +
+  geom_circle(aes(x0 = -1, y0 = 2, r = 2)) +
+  labs(x = "X1", y = "X2") +
+  coord_fixed() +
+  xlim(-4,2) +
+  ylim(-1,5)
+```
+
+(b) On your sketch, indicate the set of points for which 
+
+$(1 + X_1)^2$ + $(2 - X_2)^2$ > 4
+
+as well as the set of points for which
+
+$(1 + X_1)^2$ + $(2 - X_2)^2$ $\leq$ 4
+
+```{r}
+#Replot showing where the points are > 4 and <=4
+#Points inside or on the circle will be the set of points
+#<= 4 and points outside the circle will be the set of
+#points > 4
+
+ggplot() +
+  geom_circle(aes(x0 = -1, y0 = 2, r = 2, fill = "red")) +
+  labs(x = "X1", y = "X2") +
+  coord_fixed() +
+  xlim(-4,2) +
+  ylim(-1,5) +
+  annotate(geom="text", x=-2.5, y=4.5, label="set of points > 4",
+              color="orange") +
+  theme(panel.background = element_rect(fill = "blue",
+                                colour = "blue",
+                                size = 0.5, linetype = "solid"))+
+  annotate(geom="text", x=-1, y=2, label="set of points <= 4",
+              color="black")
+
+```
+
+(c) Suppose that a classifier assigns an observation to the blue class if
+
+$(1 + X_1)^2$ + $(2 - X_2)^2$ > 4,
+
+and to the red class otherwise.  To what class is the observation (0,0) classified? (-1,1)? (2,2)?, (3,8)?
+
+```{r}
+#An easy way to visualize this is to plot the individual points and 
+#observe where they are in relation to the circle.
+
+ggplot() +
+  geom_circle(aes(x0 = -1, y0 = 2, r = 2)) +
+  labs(x = "X1", y = "X2") +
+  coord_fixed() +
+  xlim(-6,4) +
+  ylim(-1,9) +
+  geom_point(aes(x=0, y=0), colour="blue", size = 3 )+
+  geom_point(aes(x=-1, y=1), colour="red", size = 3)+
+  geom_point(aes(x=2, y=2), colour="blue", size = 3)+
+  geom_point(aes(x=3, y=8), colour="blue", size = 3)
+```
+
+From this plot we clearly see that (-1,1) is classified as red and the other 3 points are classified blue.
+
+(d) Argue that while the decision boundary in (c) is not linear in terms of $X_1$ and $X_2$, it is linear in terms of $X_1$, $X_1^2$, $X_2$, and $X_2^2$.
+
+Here we can expand the terms to get:
+
+$2X_1$ - $4X_2$ + $X_1^2$ + $X_2^2$ + 1 = 0
+
+We can then rewrite this as a function of the individual terms:
+
+f($X_1$, $X_2$, $X_1^2$, $X_2^2$) = $2X_1$ - $4X_2$ + $X_1^2$ + $X_2^2$ + 1 = 0
+
+Written in this form we can see that each term is now linear with respect to itself.
+
+\pagebreak
+
+Question Two
+
+Text: Exercises 9.7, Conceptual Question #3.
+
+Here we explore the maximal margin classifier on a toy data set.
+
+(a) We are given n = 7 observations in p = 2 dimensions.  For each observation, there is an associated class label. Sketch the observations.
+
+```{r}
+ggplot() +
+  labs(x = "X1", y = "X2") +
+  xlim(0,5) +
+  ylim(0,5) +
+  geom_point(aes(x=3, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=2), colour="red", size = 3)+
+  geom_point(aes(x=4, y=4), colour="red", size = 3)+
+  geom_point(aes(x=1, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=1), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=3), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=1), colour="blue", size = 3)
+```
+
+(b) Sketch the optimal separating hyperplane, and provide the equation for this hyperplane (of the form (9.1)).
+
+The optimal separating hyperplane is the hyperplane that maximizes the distance from the points nearest the boundary.
+In this case the points that define the hyperplane (in this case a line since p = 2) will be the points halfway between (2,1) and (2,2) and (4,3) and (4,4).  The points on the hyperplane are (2,1.5) and (4,3.5).
+
+We can rewrite the form of equation 9.1 into a more familiar form of y = mx + b, where y = $X_2$, x = $X_1$, and b = $\beta_0$.
+
+In this form we can solve for the slope m = (3.5 - 1.5)/(4 - 2) = 1.  So y = x + b.  Now let's use point (4,3.5) to solve for b and we will find that b = -0.5.  Now we have y = x - 0.5.  Taking all terms to one side we have:
+
+0.5 - x + y = 0
+
+If we then substitute our other notation back into this format we have the equation of the optimal hyperplane in the format of equation 9.1 as
+
+0.5 - $X_1$ + $X_2$ = 0 which we can plot as follows:
+
+```{r}
+#Create some points on the optimal hyperplane line
+X1 <- seq(0,5,0.1)
+X2 <- X1 - 0.5
+df <- data.frame(X1 = X1, X2 = X2) 
+ggplot(data = df, aes(x = X1, y = X2)) +
+  geom_line() +
+  labs(x = "X1", y = "X2") +
+  xlim(0,5) +
+  ylim(0,5) +
+  geom_point(aes(x=3, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=2), colour="red", size = 3)+
+  geom_point(aes(x=4, y=4), colour="red", size = 3)+
+  geom_point(aes(x=1, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=1), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=3), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=1), colour="blue", size = 3)
+```
+
+(c) Describe the classification rule for the maximal margin classifier.  It should be something along the lines of "Classify to Red if $\beta_0$ + $\beta_1X_1$ + $\beta_2X_2$ > 0, and classify to Blue otherwise."  Provide the values for $\beta_0$, $\beta_1$, $\beta_2$.
+
+Checking a point for red, let's say, (3,4) we see that a red point is above the line and greater than zero.  Likewise testing a blue point at (4,1) we see that it is below the line and thus less than zero.  Therefore our classification rule is:
+
+Classify to Red if 0.5 - $X_1$ + $X_2$ > 0, and classify to Blue otherwise.  In this case $\beta_0$ = 0.5, $\beta_1$ = -1, and $\beta_2$ = 1.
+
+(d) On your sketch, indicate the margin for the maximal margin hyperplane.
+
+```{r, warning=FALSE}
+#Generate some points to plot the margins
+top_margin_X1 <- seq(0,5,0.1)
+top_margin_X2 <- top_margin_X1 + 0
+bottom_margin_X1 <- seq(0,5,0.1)
+bottom_margin_X2 <- bottom_margin_X1 - 1
+df <- data.frame(top_margin_X1 = top_margin_X1, top_margin_X2 = top_margin_X2, 
+                 bottom_margin_X1 = bottom_margin_X1, bottom_margin_X2 = bottom_margin_X2, 
+                 X1 = X1, X2 = X2) 
+ggplot(data = df) +
+  geom_line(aes(x = X1, y = X2)) +
+  geom_line(aes(x = top_margin_X1, y = top_margin_X2, linetype = "dashed", color = "red")) +
+  geom_line(aes(x = bottom_margin_X1, y = bottom_margin_X2, linetype = "dashed", color = "variable")) +
+  labs(x = "X1", y = "X2") +
+  xlim(0,5) +
+  ylim(0,5) +
+  geom_point(aes(x=3, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=2), colour="red", size = 3)+
+  geom_point(aes(x=4, y=4), colour="red", size = 3)+
+  geom_point(aes(x=1, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=1), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=3), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=1), colour="blue", size = 3)
+```
+
+The margins are shown on the plot in the respective color of classification for that side.
+
+(e) Indicate the support vectors for the maximal margin classifier.
+
+In this case we have 4 vectors that lie on the margin.  These are the support vectors and correspond to observations 2 and 3 for red and 5 and 6 for blue.
+
+(f) Argue that a slight movement of the seventh observation would not affect the maximal margin hyperplane.
+
+The seventh observation has the coordinates (4,1).  This observation is not a support vector.  Since the maximal margin hyperplane depends directly on the support vectors, but not on the other observations we conclude that a slight movement of this observation would have no effect on the maximal margin hyperplane.
+
+(g) Sketch a hyperplane that is not the optimal separating hyperplane, and provide the equation for this hyperplane.
+
+```{r, warning=FALSE}
+#Create some values for a not optimal separating hyperplane
+X1 <- seq(0,5,0.1)
+X2 <- 1.25*X1 - 1.2
+df <- data.frame(X1 = X1, X2 = X2) 
+ggplot(data = df, aes(x = X1, y = X2)) +
+  geom_line() +
+  labs(x = "X1", y = "X2") +
+  xlim(0,5) +
+  ylim(0,5) +
+  geom_point(aes(x=3, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=2), colour="red", size = 3)+
+  geom_point(aes(x=4, y=4), colour="red", size = 3)+
+  geom_point(aes(x=1, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=1), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=3), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=1), colour="blue", size = 3)
+
+```
+
+(h) Draw and additional observation on the plot so that the two classes are no longer separable by a hyperplane.
+
+```{r, warning=FALSE}
+X1 <- seq(0,5,0.1)
+X2 <- X1 - 0.5
+df <- data.frame(X1 = X1, X2 = X2) 
+ggplot(data = df, aes(x = X1, y = X2)) +
+  geom_line() +
+  labs(x = "X1", y = "X2") +
+  xlim(0,5) +
+  ylim(0,5) +
+  geom_point(aes(x=3, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=2), colour="red", size = 3)+
+  geom_point(aes(x=4, y=4), colour="red", size = 3)+
+  geom_point(aes(x=1, y=4), colour="red", size = 3)+
+  geom_point(aes(x=2, y=1), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=3), colour="blue", size = 3)+
+  geom_point(aes(x=4, y=1), colour="blue", size = 3)+
+  geom_point(aes(x=3, y=5), colour="blue", size = 3)
+```
+
+\pagebreak
+
+Question Three
+
+Text: Exercises 9.7, Conceptual Question #6.
+
+At the end of Section 9.6.1, it is claimed that in the case of data that is just barely linearly separable, a support vector classifier with a small value of cost that misclassified as couple of training observations may perform better on test data than one with a huge value of cost that does not misclassify any training observations.  You will now investigate this claim.
+
+(a) Generate two-class data with p = 2 in such a way that the classes are just barely linearly separable.
+
+```{r}
+#Set a seed for reproducability
+set.seed(1)
+
+#We'll use a simple linear boundary to create simulated data
+#P1 and P2 will be the features
+#Create random points using the uniform distribution on the interval 0 to 10
+points <- runif(100, min = 0, max = 10)
+
+#Split the points up into feature 1 and 2
+P1 <- sample(points, 50)
+P2 <- points[!(points %in% P1)]
+
+#Our simple classification rule for the test data is
+#if P1 - P2 > 0 classify to 1, otherwise -1.  Also,
+#we need to check for and remove any points on the line so
+#that our points will be for sure linear separable
+
+#Create a classification variable called y
+y = rep(0,50)
+
+sim_data <- data.frame(P1 = P1, P2 = P2, y = y)
+
+#Now classify the data based on our rule
+
+for (i in 1:50){
+  if(sim_data$P1[i] - sim_data$P2[i] > 0){
+    sim_data$y[i] = 1 
+  }
+  else{
+    sim_data$y[i] = -1
+  }
+}
+
+#Turn y into a factor for plotting and further work
+sim_data <- dplyr::mutate(sim_data, y = factor(y))
+sim_data
+
+ggplot(data = sim_data, aes(x = P2, y = P1, colour = y)) +           # flip axes to match SVM plot method; F2 on `x`
+geom_point(alpha = 0.5, size = 4) +
+scale_colour_manual(values = c("blue", "red")) +
+NULL
+
+#Looks pretty good visually 
+```
+
+(b) Compute the cross-validation error rates for support vector classifiers with a range of cost values.  How many training errors are misclassified for each value of cost considered, and how does this relate to the cross-validation errors obtained?
+
+```{r}
+set.seed(1)
+tune_out <- e1071::tune(svm, y ~ ., data = sim_data, kernel = "linear",
+                        ranges = list(cost = c(0.001, 0.01, 0.1, 1, 5, 10, 100)))
+summary(tune_out)
+
+#We can look at the number of misclassifications for each cost
+#The misclassifications are listed with increasing cost
+tune_out$performances$error*50
+
+```
+
+We see that for lower costs (wider margin, more robust model with lower variance but higher bias) we see fairly poor performance with 21 misclassifications for the lowest 2 costs.  The model improves rapidly with respect to classification accuracy as the cost increases and the classification margin narrows.  At a cost of 100 we have no training error and this is the model that cross validation selects as the best. 
+
+(c) Generate an appropriate test data set, and compute the test errors corresponding to each of the values of cost considered.  Which value of cost leads to the fewest test errors, and how does this compare to the values of cost that yield the fewest training errors and fewest cross-validation errors?
+
+```{r}
+#Choose a new seed for the test data
+set.seed(11)
+
+#Create a test data set
+#Create random points using the uniform distribution on the interval 0 to 10
+points <- runif(100, min = 0, max = 10)
+
+#Split the points up into feature 1 and 2
+P1 <- sample(points, 50)
+P2 <- points[!(points %in% P1)]
+
+#Our simple classification rule for the test data is
+#if P1 - P2 > 0 classify to 1, otherwise -1.  Also,
+#we need to check for and remove any points on the line so
+#that our points will be for sure linear separable
+
+#Create a classification variable called y
+y = rep(0,50)
+
+test_data <- data.frame(P1 = P1, P2 = P2, y = y)
+
+#Now classify the data based on our rule
+
+for (i in 1:50){
+  if(test_data$P1[i] - test_data$P2[i] > 0){
+    test_data$y[i] = 1 
+  }
+  else{
+    test_data$y[i] = -1
+  }
+}
+
+#Turn y into a factor for prediction modeling
+test_data <- dplyr::mutate(test_data, y = factor(y))
+#test_data
+
+#Let's create some support vector classifier models with different costs
+#from our training data
+svmfit001 <- e1071::svm(y ~ ., data = sim_data, kernel = "linear",
+                      cost = 0.001, scale = FALSE)
+svmfit01 <- e1071::svm(y ~ ., data = sim_data, kernel = "linear",
+                      cost = 0.01, scale = FALSE)
+svmfit.1 <- e1071::svm(y ~ ., data = sim_data, kernel = "linear",
+                      cost = 0.1, scale = FALSE)
+svmfit1 <- e1071::svm(y ~ ., data = sim_data, kernel = "linear",
+                      cost = 1, scale = FALSE)
+svmfit10 <- e1071::svm(y ~ ., data = sim_data, kernel = "linear",
+                      cost = 10, scale = FALSE)
+svmfit100 <- e1071::svm(y ~ ., data = sim_data, kernel = "linear",
+                      cost = 100, scale = FALSE)
+
+#Using our models with different values for cost we will use the predict() function
+#to determine our test error for comparison
+
+true_class = test_data$y
+
+predicted001 = predict(svmfit001, newdata = test_data)
+predicted01 = predict(svmfit01, newdata = test_data)
+predicted.1 = predict(svmfit.1, newdata = test_data)
+predicted1 = predict(svmfit1, newdata = test_data)
+predicted10 = predict(svmfit10, newdata = test_data)
+predicted100 = predict(svmfit100, newdata = test_data)
+
+pred_test_df001 <- data.frame(
+  true_class      = test_data$y,
+  predicted001 = predicted001)
+pred_test_df001 %>%
+  yardstick::conf_mat(truth = true_class, estimate = predicted001)
+1 - (pred_test_df001 %>%
+  yardstick::accuracy(truth = true_class, estimate = predicted001) %>% 
+  purrr::pluck(".estimate"))
+
+pred_test_df01 <- data.frame(
+  true_class      = test_data$y,
+  predicted01 = predicted01)
+pred_test_df01 %>%
+  yardstick::conf_mat(truth = true_class, estimate = predicted01)
+1 - (pred_test_df01 %>%
+  yardstick::accuracy(truth = true_class, estimate = predicted01) %>% 
+  purrr::pluck(".estimate"))
+
+pred_test_df.1 <- data.frame(
+  true_class      = test_data$y,
+  predicted.1 = predicted.1)
+pred_test_df.1 %>%
+  yardstick::conf_mat(truth = true_class, estimate = predicted.1)
+1 - (pred_test_df.1 %>%
+  yardstick::accuracy(truth = true_class, estimate = predicted.1) %>% 
+  purrr::pluck(".estimate"))
+
+pred_test_df1 <- data.frame(
+  true_class      = test_data$y,
+  predicted1 = predicted1)
+pred_test_df1 %>%
+  yardstick::conf_mat(truth = true_class, estimate = predicted1)
+1 - (pred_test_df1 %>%
+  yardstick::accuracy(truth = true_class, estimate = predicted1) %>% 
+  purrr::pluck(".estimate"))
+
+pred_test_df10 <- data.frame(
+  true_class      = test_data$y,
+  predicted10 = predicted10)
+pred_test_df10 %>%
+  yardstick::conf_mat(truth = true_class, estimate = predicted10)
+1 - (pred_test_df10 %>%
+  yardstick::accuracy(truth = true_class, estimate = predicted10) %>% 
+  purrr::pluck(".estimate"))
+
+pred_test_df100 <- data.frame(
+  true_class      = test_data$y,
+  predicted100 = predicted100)
+pred_test_df100 %>%
+  yardstick::conf_mat(truth = true_class, estimate = predicted100)
+1 - (pred_test_df100 %>%
+  yardstick::accuracy(truth = true_class, estimate = predicted100) %>% 
+  purrr::pluck(".estimate"))
+```
+
+The costs associated with the lowest test errors are 1, 10, and 100 which all yield the same error.  The lowest cross validated training error is associated with a cost of 100.  We can see that while cross validation on a test set suggests the model with the lowest bias we may want to choose a lower cost for the model based on how it performs on test data.    
+
+(d) Discuss your results.
+
+The overall goal of this problem was to investigate the idea of the bias-variance tradeoff inherent in any modeling technique, but specifically the support vector classifier here.  In part (b) we see that cross validation suggests a model with the highest cost investigated.  This is nice for providing a model with very low bias, but at the cost of high variance and a model that might not be robust when tested.  In part (c) we clearly see that a model with a cost of 100 overfit the data.  A model with a cost of 1 performs just as well as a model with a cost of 100 on the test data set.  A model with a cost of 1 seems to be the best option for optimizing the bias-variance tradeoff.  We would accept a training error (a small training bias) to improve our model robustness (lower test variance).  
+
+\pagebreak
+
+Question Four
+
+Text: Exercises 9.7, Conceptual Question #8.
+
+This problem involves the OJ data set which is part of the ISLR package.
+
+(a) Create a training set containing a random sample of 800 observations, and a test set containing the remaining observations.
+
+```{r}
+#set a seed for reproducibility
+set.seed(1)
+
+#split the OJ data into a test and training set
+
+n <- nrow(OJ)
+train_sample  <- sample(1:n, 800)
+OJ_train <- OJ[train_sample,]
+OJ_test <- OJ[-train_sample,]
+
+#Sanity check dimensions of training and test set
+dim(OJ_train)
+dim(OJ_test)
+```
+
+(b) Fit a support vector classifier to the training data using cost = 0.01, with Purchase as the response and the other variables as predictors.  Use the summary() function to produce summary statistics, and describe the results obtained.
+
+```{r}
+OJ_svmfit01 <- e1071::svm(Purchase ~ ., data = OJ_train, kernel = "linear",
+                      cost = 0.01, scale = FALSE)
+summary(OJ_svmfit01)
+```
+
+The summary output doesn't provide a lot of information, but we see that we have 615 support vectors with 309 in one class and 306 in the other.  The classes are CH for Citrus Hill, and MM for Minute Maid.  The summary also confirms that we used a linear kernel and our choice of cost.
+
+(c) What are the training and test error rates?
+
+```{r}
+#Training error rate
+OJ_train_error <- predict(OJ_svmfit01, OJ_train)
+table(OJ_train$Purchase, OJ_train_error)
+#Calculate the training error based on the table output
+OJ_training_e <- (105 + 65)/800
+OJ_training_e
+
+#Now calculate test error rate
+OJ_test_error <- predict(OJ_svmfit01, OJ_test)
+table(OJ_test$Purchase, OJ_test_error)
+#Calculate the test error from the confusion matrix
+OJ_test_e <- (43 + 20)/270
+OJ_test_e
+```
+
+(d) Use the tune() function to select the optimal cost.  Consider values in the range 0.01 to 10.
+
+```{r}
+set.seed(1)
+tune_out <- tune(svm, Purchase ~ ., data = OJ_train, kernel = "linear",
+                 ranges = list(cost = c(.01, 0.1, 1, 5, 10, 100)),
+                 scale = FALSE)
+summary(tune_out)
+
+#Optimal cost is 1 based on cross validation
+```
+
+(e) Compute the training and test error rates using this new value for cost.
+
+```{r}
+#Fit a new svm model using a cost of 1
+OJ_svmfit1 <- e1071::svm(Purchase ~ ., data = OJ_train, kernel = "linear",
+                      cost = 1, scale = FALSE)
+summary(OJ_svmfit1)
+
+#Training error rate
+OJ_train_error1 <- predict(OJ_svmfit1, OJ_train)
+table(OJ_train$Purchase, OJ_train_error1)
+#Calculate the training error based on the table output
+OJ_training_e1 <- (72 + 62)/800
+OJ_training_e1
+
+#Now calculate test error rate
+OJ_test_error1 <- predict(OJ_svmfit1, OJ_test)
+table(OJ_test$Purchase, OJ_test_error1)
+#Calculate the test error from the confusion matrix
+OJ_test_e1 <- (31 + 13)/270
+OJ_test_e1
+```
+
+(f) Repeat parts (b) through (e) using a support vector machine with a radial kernel.  Use the default value for gamma.
+
+```{r}
+OJ_svmfit_rad01 <- e1071::svm(Purchase ~ ., data = OJ_train, kernel = "radial",
+                      cost = 0.01, scale = FALSE)
+summary(OJ_svmfit_rad01)
+
+#Training error rate
+OJ_train_error_rad <- predict(OJ_svmfit_rad01, OJ_train)
+table(OJ_train$Purchase, OJ_train_error_rad)
+#Calculate the training error based on the table output
+OJ_training_e_rad <- 315/800
+OJ_training_e_rad
+
+#Now calculate test error rate
+OJ_test_error_rad <- predict(OJ_svmfit_rad01, OJ_test)
+table(OJ_test$Purchase, OJ_test_error_rad)
+#Calculate the test error from the confusion matrix
+OJ_test_e_rad <- 102/270
+OJ_test_e_rad
+
+tune_out_rad <- tune(svm, Purchase ~ ., data = OJ_train, kernel = "radial",
+                 ranges = list(cost = c(0.01, 0.1, 1, 5, 10)))
+summary(tune_out_rad)
+
+#Optimal cost is 1 based on cross validation
+
+#Fit a new svm model using a cost of 1
+OJ_svmfit1_rad <- e1071::svm(Purchase ~ ., data = OJ_train, kernel = "radial",
+                      cost = 1, scale = FALSE)
+summary(OJ_svmfit1_rad)
+
+#Training error rate
+OJ_train_error1_rad <- predict(OJ_svmfit1_rad, OJ_train)
+table(OJ_train$Purchase, OJ_train_error1_rad)
+#Calculate the training error based on the table output
+OJ_training_e1_rad <- (129 + 52)/800
+OJ_training_e1_rad
+
+#Now calculate test error rate
+OJ_test_error1_rad <- predict(OJ_svmfit1_rad, OJ_test)
+table(OJ_test$Purchase, OJ_test_error1_rad)
+#Calculate the test error from the confusion matrix
+OJ_test_e1_rad <- (43 + 25)/270
+OJ_test_e1_rad
+
+```
+
+(g) Repeat parts (b) through (e) using a support vector machine with a polynomial kernel.  Set degree=2.
+
+```{r}
+OJ_svmfit_poly01 <- e1071::svm(Purchase ~ ., data = OJ_train, kernel = "polynomial",
+                      degree = 2, cost = 0.01, scale = FALSE)
+summary(OJ_svmfit_poly01)
+
+#Training error rate
+OJ_train_error_poly <- predict(OJ_svmfit_poly01, OJ_train)
+table(OJ_train$Purchase, OJ_train_error_poly)
+#Calculate the training error based on the table output
+OJ_training_e_poly <- (70 + 62)/800
+OJ_training_e_poly
+
+#Now calculate test error rate
+OJ_test_error_poly <- predict(OJ_svmfit_poly01, OJ_test)
+table(OJ_test$Purchase, OJ_test_error_poly)
+#Calculate the test error from the confusion matrix
+OJ_test_e_poly <- (29 + 14)/270
+OJ_test_e_poly
+
+tune_out_poly <- tune(svm, Purchase ~ ., data = OJ_train, kernel = "polynomial",
+                 degree = 2, ranges = list(cost = c(0.01, 0.1, 1, 5, 10)))
+summary(tune_out_poly)
+
+#Optimal cost is 51 based on cross validation
+
+#Fit a new svm model using a cost of 5
+OJ_svmfit5_poly <- e1071::svm(Purchase ~ ., data = OJ_train, kernel = "polynomial",
+                      degree = 2, cost = 5, scale = FALSE)
+summary(OJ_svmfit5_poly)
+
+#Training error rate
+OJ_train_error5_poly <- predict(OJ_svmfit5_poly, OJ_train)
+table(OJ_train$Purchase, OJ_train_error5_poly)
+#Calculate the training error based on the table output
+OJ_training_e1_poly <- (67 + 69)/800
+OJ_training_e1_poly
+
+#Now calculate test error rate
+OJ_test_error5_poly <- predict(OJ_svmfit5_poly, OJ_test)
+table(OJ_test$Purchase, OJ_test_error5_poly)
+#Calculate the test error from the confusion matrix
+OJ_test_e1_poly <- (30 + 15)/270
+OJ_test_e1_poly
+```
+
+(h) Overall, which approach seems to give the best results on this data?
+
+After investigating the different kernel options for an SVM we find that the linear kernel performs the best on this data with a cross validated error rate of 0.163.  The polynomial kernel with degree 2 was very close in performance to the linear kernel with a test error rate of 0.167.  The radial kernel gave the worst results.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

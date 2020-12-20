@@ -1,0 +1,395 @@
+---
+title: "STAA 577 Assignment 1"
+author: "Jon Dollard"
+date: "8/29/2020"
+output: pdf_document
+---
+
+```{r setup, warning = FALSE, message = FALSE, include=FALSE}
+library(tibble)           # special type of data frame
+library(magrittr)         # pipes
+library(dplyr)            # data manipulation
+library(ggplot2)          # pretty plots
+library(tidyr)            # reshape data frames; mostly for ggplots
+library(MASS)
+library(ISLR)
+```
+
+Applied Problem 10.
+
+This question should be answered using the Weekly data set, which is part of the ISLR package.  This data is similar in nature to the Smarket data drom this chapter's lab, except that it contains 1,089 weekly returns for 21 years, from the beginning of 1990 to the end of 2010.
+
+(a) Produce some numerical and graphical summaries of the Weekly data.  Do there appear to be any patterns?
+
+```{r, message=FALSE}
+#Attach the Weekly data set for ease of use.
+attach(Weekly)
+#?Weekly
+#First let's check the dimensions of this data set Weekly
+dim(Weekly)
+#As stated in the problem statement we have confirmed we have 1089
+#observations (rows) and 9 variables (columns)
+#Let's look at the names of the variables in the Weekly data set next.
+names(Weekly)
+#We can also look at a summary of the Weekly data set
+#to get a better feel what what characteristics each variable has.
+summary(Weekly)
+```
+
+```{r}
+#Now that we have looked at the data set, next we can look for 
+#correlations that appear to exist in the data.  Let's first look 
+#at the correlations numerically and then graphicaly.
+cor(Weekly[,-9])
+```
+
+```{r}
+#Let's look at patterns in the data graphically using the pairs function.
+pairs(Weekly[,-9], col = Weekly$Direction, lower.panel = NULL)
+```
+
+Looking at both numerical and graphical summaries of the data I don't see any noticable patterns with the exception of year and volume showing some correlation.  The numerical values for correlation between the 8 numeric variables is very low notwithstanding the noted exception between year and volume.  The graphical representation of the pairs of variables also supports this conclusion.
+
+
+(b) Use the full data set to perform a logistic regression with Direction as the response and the five lag variables plus Volume as predictors.  Use the summary function to print the results.  Do any of the predictors appear to be statistically significant?  If so, which ones?
+
+```{r}
+#We will use the glm() function in R to perform the logistic regression for part b.
+Weekly_LR = glm(Direction ~ Lag1 + Lag2 + 
+                  Lag3 + Lag4 + Lag5 + Volume, data = Weekly, 
+                family = binomial)
+summary(Weekly_LR)
+```
+
+The only variable that appear statistically significant is Lag2 with a p value of 0.0296.  
+
+(c) Compute the confusion matrix and overall fraction of correct predictions.  Explain what the confusion matrix is telling you about the types of mistakes made by the logistic regression.
+
+```{r}
+#To compute the confustion matrix we will need to use the training data
+#to make predictions using our logistic regression model built in part (b).  
+#Use the predict() function in R to accomplish this.
+Weekly_probabilities = predict(Weekly_LR, type = "response")
+
+#Take a look at the first 10 predictions using or logistic regression model
+Weekly_probabilities %>% head(10)
+
+#Take a look at the first 10 responses (Direction) in the Weekly data set
+Weekly$Direction %>% head(10)
+
+#Set a prediction cutoff value.  For this problem let's use 0.5
+cutoff = 0.5
+
+#Create a data frame of predictions from our logistic regression model using a cutoff of 0.5
+Weekly_predictions = ifelse(Weekly_probabilities > cutoff, "Up", "Down")
+
+#Create the confusion matrix
+confusion_matrix = table(truth = Weekly$Direction, pred = Weekly_predictions)
+addmargins(confusion_matrix)
+
+#Overall accuracy of the logistic regression model
+sum(diag(confusion_matrix)) / sum(confusion_matrix)
+```
+
+We can see from the confusion matrix that the overall accuracy of the model is about 56%.  However, we also notice that this model has a very good sensitivity but very poor specificity.  It correctly classifies the the days when the market was up with relatively high accuracy, but performs poorly at predicting days when the market is down generating many false positive predictions. 
+
+(d) Now fit the logistic regression model using a training data period from 1990 to 2008, with Lag2 as the only predictor.  Compute the confusion matrix and the overall fraction of correct predictions for the held out data (that is, the data from 2009 and 2010)
+
+```{r}
+#Create a data frame of training data.
+Weekly_training_data <- dplyr::filter(Weekly, Year < 2009)
+
+#Create a data frame of the test data.
+Weekly_test_data <- dplyr::filter(Weekly, Year >= 2009)
+
+#Double check the consistency of the training and test data sets now.
+nrow(Weekly_training_data)
+nrow(Weekly_test_data)
+nrow(Weekly_training_data) + nrow(Weekly_test_data) == nrow(Weekly) 
+
+#Okay test and training sets are made, now let's fit the 
+#model using Lag2 as the only predictor and the training data set.
+Weekly_LR_1pred <- glm(Direction ~ Lag2, 
+                       data = Weekly_training_data, family = "binomial")
+#Take a look at the summary of the model.
+summary(Weekly_LR_1pred)
+
+#Now calculate probabilities using the predict() function with the test data
+Weekly_probs_1pred <- predict(Weekly_LR_1pred, 
+                              newdata = Weekly_test_data, type = "response")
+
+#Then create a data fram of the predictions using the cutoff value of 0.5.
+Weekly_preds_1pred <- ifelse(Weekly_probs_1pred > cutoff, "Up", "Down")
+
+#Create the confusion matrix
+confusion_matrix = table(truth = Weekly_test_data$Direction, pred = Weekly_preds_1pred)
+addmargins(confusion_matrix)
+
+#Overall accuracy of the logistic regression model using
+#Lag2 as the only predictor and a held out set for testing
+sum(diag(confusion_matrix)) / sum(confusion_matrix)
+```
+
+(e) Repeat (d) using LDA.
+
+```{r}
+#use the lda() function in the MASS library to fit an LDA model to the training data
+Weekly_LDA <- MASS::lda(Direction ~ Lag2, data = Weekly_training_data)
+Weekly_LDA
+
+#Use the predict() function for model predictions
+Weekly_LDA_predict <- predict(Weekly_LDA, newdata = Weekly_test_data) 
+
+#Classify the predictions
+Weekly_LDA_class <- Weekly_LDA_predict$class
+
+#Use the classified predictions to produce a confusion matrix.
+confusion_matrix_LDA <- table(truth = Weekly_test_data$Direction, pred = Weekly_LDA_class)
+addmargins(confusion_matrix_LDA)
+
+#Calculate the overall accuracy of the LDA model using 
+#Lag2 as a predictor and the held out test set
+sum(diag(confusion_matrix_LDA)) / sum(confusion_matrix_LDA)
+```
+
+(f) Repeat (d) using QDA.
+
+```{r}
+#Use the qda() function in the MASS library to fit a QDA model to the training data
+Weekly_QDA <- MASS::qda(Direction ~ Lag2, data = Weekly_training_data)
+Weekly_QDA
+
+#Classify the QDA predictions using the predict() function in R.
+Weekly_QDA_class <- predict(Weekly_QDA, newdata = Weekly_test_data)$class
+
+#Create the confusion matrix from the QDA classification.
+confusion_matrix_QDA <- table(truth = Weekly_test_data$Direction, pred = Weekly_QDA_class)
+addmargins(confusion_matrix_QDA)
+
+#Calculate the overall accuracy of the QDA classification model.
+sum(diag(confusion_matrix_QDA)) / sum(confusion_matrix_QDA)
+```
+
+(g) Repeat (d) using KNN with K = 1.
+
+```{r}
+#Set the model training classes
+training_classes <- Weekly_training_data$Direction 
+
+#Use the select() function to select the Lag2 predictor from the training data
+Weekly_KNN_train <- dplyr::select(Weekly_training_data, Lag2) 
+
+#Set the model test classes
+test_classes <- Weekly_test_data$Direction
+
+#Use the select() function to select the Lag2 predictor from the test data
+Weekly_KNN_test <- dplyr::select(Weekly_test_data, Lag2)
+set.seed(1)
+
+#Use KNN to predict Direction
+Weekly_KNN_pred_class <- class::knn(train = Weekly_KNN_train,
+                          test = Weekly_KNN_test, cl = training_classes, k = 1)
+
+#Create a confusion matrix for the KNN model
+KNN_confusion_matrix <- table(truth = test_classes, pred = Weekly_KNN_pred_class)
+addmargins(KNN_confusion_matrix)
+
+#Check the KNN model overall accuracy using K=1 and Lag2 as the only predictor
+sum(diag(KNN_confusion_matrix)) / sum(KNN_confusion_matrix)
+```
+
+(h) Which of these methods appears to provide the best results on this data?
+
+After reviewing the different classification methods used for this problem I would conclude that logistic regresssion and linear discriminant analysis both appear to perform the best and result in the same accuracy and same sensitivity and specificity values. The accuracy of the logistic regression was improved when using a training and test data set.
+
+\pagebreak
+
+11.  In this problem, you will develop a model to predict whether a given car gets high or low mileage based on the Auto data set.
+
+(a) Create a binary variable, mpg01, that contains a 1 if mpg contains a value above its median, and a 0 if mpg contains a value below its median.  You can compute the median using the median() function.  Note you may find it helpful to use the data.frame() function to create a single data set containing both mpg01 and the other Auto variables.
+
+```{r, message = FALSE}
+#Attach the Auto data set for ease of manipulation.
+attach(Auto)
+
+#Take a look at a summary of the Auto data set
+summary(Auto)
+
+#Determine the dimensions of the Auto data set
+dim(Auto)
+
+#Check the first 5 values of the mpg
+head(Auto$mpg)
+
+#Use the median() function to create a variable mpg01
+mpg01 <- ifelse(Auto$mpg > median(Auto$mpg), 1, 0)
+
+#Create a data frame that includes the new variable mpg01
+Auto_data <- data.frame(Auto, mpg01)
+
+#Take a quick look at the summary of the data 
+#frame to make sure all the variables are there.
+summary(Auto_data)
+
+#Everything looks good so move on to part (b)
+
+```
+
+(b) Explore the data graphically in order to investigate the association between mpg01 and the other features.  Which of the other features seem most likely to be useful in predicting mpg01?  Scatterplots and boxplots may be useful tools to answer this question.  Describe your findings.
+
+```{r}
+#Look at a pairs plot of all of the data to determine 
+#if any associations and relationships in the data exist.
+pairs(Auto_data, lower.panel = NULL)
+```
+
+Looking at a pairs plot of the data I think the variables most associated with mpg are displacement, horsepower, weight, and year.  Displacement, horsepower, and weight appear to be negatively correlated with mpg and postively correlated with year.  As displacement, horsepower and weight go up the mpg appears to go down.  As the year variable increases the mpg also appears to increase linearly.
+
+(c) Split the data into a training set and a test set.
+
+```{r}
+#Create a data frame of training data.
+Auto_training_data <- dplyr::filter(Auto_data, year < 78)
+
+#Create a data frame of the test data.
+Auto_test_data <- dplyr::filter(Auto_data, year >= 78)
+
+#Double check the consistency of the training and test data sets now.
+nrow(Auto_training_data)
+nrow(Auto_test_data)
+nrow(Auto_training_data) + nrow(Auto_test_data) == nrow(Auto_data) 
+```
+
+(d) Perform LDA on the training data in order to predict mpg01 using the variables that seemed most associated with mpg01 in (b).  What is the test error of the model obtained?
+
+```{r}
+#use the lda() function in the MASS library to fit an LDA model to the training data
+Auto_LDA <- MASS::lda(mpg01 ~ displacement + 
+                        horsepower + weight + year, data = Auto_training_data)
+Auto_LDA
+
+#Use the predict() function for model predictions
+Auto_LDA_predict <- predict(Auto_LDA, newdata = Auto_test_data) 
+
+#Classify the predictions
+Auto_LDA_class <- Auto_LDA_predict$class
+
+#Use the classified predictions to produce a confusion matrix.
+confusion_matrix_LDA <- table(truth = Auto_test_data$mpg01, pred = Auto_LDA_class)
+addmargins(confusion_matrix_LDA)
+
+#Calculate the overall accuracy of the LDA model 
+sum(diag(confusion_matrix_LDA)) / sum(confusion_matrix_LDA)
+```
+
+(e) Perform QDA on the training data in order to predict mpg01 using the variables that seemed most associated with mpg01 in (b).  What is the test error of the model obtained?
+
+```{r}
+#Use the qda() function in the MASS library to fit a QDA model to the training data
+Auto_QDA <- MASS::qda(mpg01 ~ displacement + horsepower + 
+                        weight + year, data = Auto_training_data)
+Weekly_QDA
+
+#Classify the QDA predictions using the predict() function in R.
+Auto_QDA_class <- predict(Auto_QDA, newdata = Auto_test_data)$class
+
+#Create the confusion matrix from the QDA classification.
+confusion_matrix_QDA <- table(truth = Auto_test_data$mpg01, pred = Auto_QDA_class)
+addmargins(confusion_matrix_QDA)
+
+#Calculate the overall accuracy of the QDA classification model.
+sum(diag(confusion_matrix_QDA)) / sum(confusion_matrix_QDA)
+```
+
+(f) Perform logistic regression on the training data in order to predict mpg01 using the variables that seemed most associated with mpg01 in (b).  What is the test error of the model obtained?
+
+```{r}
+#Use the glm() function in R to create a logistic regression model to predict mpg01
+Auto_LR <- glm(mpg01 ~ displacement + horsepower + weight +
+                 year, data = Auto_training_data, family = "binomial")
+
+#Take a look at the summary of the model.
+summary(Auto_LR)
+
+#Now calculate probabilities using the predict() function with the test data
+Auto_probs <- predict(Auto_LR, newdata = Auto_test_data, type = "response")
+
+#Then create a data frame of the predictions using the cutoff value of 0.5.
+Auto_preds <- ifelse(Auto_probs > cutoff, 1, 0)
+
+#Create the confusion matrix
+confusion_matrix = table(truth = Auto_test_data$mpg01, pred = Auto_preds)
+addmargins(confusion_matrix)
+
+#Overall accuracy of the logistic regression model 
+sum(diag(confusion_matrix)) / sum(confusion_matrix)
+```
+
+(g) Perfrom KNN on the training data, with several values of K, in order to predict mpg01.  Use only the variables that seemed most associated with mpg01 in (b).  What test errors do you obtain?  Which value of K seems to perform the best on this data set?
+
+```{r}
+#Set the model training classes
+training_classes <- Auto_training_data$mpg01 
+
+#Use the select() function to select the predictors from the Auto training data set
+Auto_KNN_train <- dplyr::select(Auto_training_data, displacement, horsepower, weight, year) 
+
+#Set the model test classes
+test_classes <- Auto_test_data$mpg01
+
+#Use the select() function to select the predictors from the Auto test data
+Auto_KNN_test <- dplyr::select(Auto_test_data, displacement, horsepower, weight, year)
+set.seed(1)
+
+
+
+purrr::map_df(1:10, function(.x) {
+  confusion_matrix <- class::knn(Auto_KNN_train, Auto_KNN_test, training_classes, k = .x) %>%
+    table(truth = test_classes, pred = .)
+    tibble::tibble(K = .x,
+                 Auto_accuracy = sum(diag(confusion_matrix)) / sum(confusion_matrix),
+                 Auto_error = 1-Auto_accuracy,
+                 Auto_sensitivity = prop.table(confusion_matrix["1", ])[2],     
+                 Auto_specificity = prop.table(confusion_matrix["0", ])[1])   
+})
+```
+
+It appears that a K=4 or 5 provides the best overall accuracy for this data.  Depending on which characteristic of sensitivity or specificity is preferred you could either choose 4 or 5.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
